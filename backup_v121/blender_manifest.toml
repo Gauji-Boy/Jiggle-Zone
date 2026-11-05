@@ -1,0 +1,11 @@
+schema_version = "1.0.0"
+id = "giggle_physics"
+version = "1.2.1"
+name = "Giggle Soft Body Physics"
+tagline = "Interactive soft body jiggle physics and secondary motion for characters and objects"
+maintainer = "VOZHD1122 & RoboDrozd / Giggle"
+type = "add-on"
+tags = ["Animation", "Physics", "Rigging"]
+blender_version_min = "5.2.0"
+license = ["SPDX:MIT"]
+website = "https://github.com/RoboDrozd/wiggy"

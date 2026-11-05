@@ -1,0 +1,7 @@
+RuntimeError: Error: Python: ReferenceError: StructRNA of type Object has been removed
+
+During handling of the above exception, another exception occurred:
+
+ReferenceError: StructRNA of type Object has been removed
+Location: <string>:57
+

@@ -1,0 +1,12 @@
+# Blender / project artifacts that are large or regenerated
+giggle_backup/
+giggle_cache/
+*.blend1
+*.blend2
+poc_*.blend
+JitterArmatureModel.blend
+
+# Scratch captures from Blender sessions
+*.crash.txt
+__pycache__/
+*.pyc
