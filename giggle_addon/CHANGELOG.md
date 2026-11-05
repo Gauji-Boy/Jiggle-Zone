@@ -23,14 +23,31 @@
   `Giggle_Cages` collection is left alone, so another Wiggy-based add-on's simulation can no
   longer be baked or cleared. A Surface Deform bind is accepted as per-session proof only; it
   does not stamp a permanent ownership flag on someone else's mesh.
+- **Clothing proxies are never adopted as cages**: the proxy objects created by
+  `giggle.attach_clothing_proxy` carry the same `_giggle_source_body` / `_giggle_vg_name` pair a
+  legacy cage does, plus a copied Wiggy modifier and a Surface Deform bind from the garment.
+  `_giggle_proxy` is now checked first, so attaching clothes cannot turn a proxy into a bake
+  target.
+- **External `DISK` caches are backed up too**: a `.blend` backup cannot restore simulation data
+  that lives in a cache directory, so `snapshot_disk_cache` copies each cage's `bake_directory`
+  into `giggle_backup/` (pruned to the newest copy) before a bake replaces it.
+- **A bake will not replace a cache it cannot back up**: `prepare_cache_replacement` returns a
+  failure when the file is unsaved or a backup cannot be written, and `bake_all_cages`,
+  `bake_selected_cage`, `rebake_all` and `bake_missing` now cancel with the reason instead of
+  overwriting the cache. This is a recovery point, not a transaction: if Blender overwrites the
+  cache and then fails, only `giggle_backup/` has the previous data.
+- **Failed-bake coverage includes the real bake call**: `run_bake_operator` is now a separate
+  seam, so tests can make the bake either return `CANCELLED` or raise, and assert that blocks,
+  timestamp, fingerprint and status are unchanged. The post-bake fingerprint-mismatch branch is
+  tested too: it marks the cache `OUTDATED` and does not pretend the old cache came back.
+- **Tests**: `tests/test_maintenance_phase1.py` (93 checks covering the areas above),
+  `tests/runtime/` (viewport, secondary scene, clean ZIP install) and `tests/run_tests.ps1`,
+  which runs all of them on Blender 5.2 and 5.3.
 - **Operations stay in the active scene**: discovery, the render pre-flight check, the armature
   fallback and the Surface Deform ownership scan are all scoped to `scene.objects`, so a second
   scene's cages and binds are not baked or cleared.
 - **Clear Cache leaves unrelated objects alone**: `giggle.clear_sim_cache` no longer strips bake
   metadata from an active object that is not one of the caches being cleared.
-- **Tests**: added `tests/test_maintenance_phase1.py` (40 checks covering the areas above) and
-  `tests/run_tests.ps1`, which runs it plus the Milestone 3 acceptance suite on Blender 5.2 and
-  5.3.
 
 ## 2.0.0 — Cage-Accelerated XPBD & Simulation Cache Manager
 

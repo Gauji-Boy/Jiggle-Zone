@@ -4795,6 +4795,11 @@ def is_giggle_owned_cage(obj, bind_targets=None):
         return False
     if obj.get('_giggle_cage'):
         return True
+    # Clothing proxies carry _giggle_source_body and _giggle_vg_name too, are bound to garments
+    # through Surface Deform, and hold a copy of the body's Wiggy modifier. Without this check
+    # attaching clothes would turn every proxy into a simulation cage.
+    if obj.get('_giggle_proxy'):
+        return False
     # 1.2 and 2.0.0 cages always store the source body and vertex group; adopt them once.
     if obj.get('_giggle_source_body') and obj.get('_giggle_vg_name'):
         obj['_giggle_cage'] = True
@@ -4978,6 +4983,7 @@ def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
 
 
 BACKUP_KEEP = 1
+CACHE_BACKUP_KEEP = 1
 
 
 def create_project_backup(keep=BACKUP_KEEP, dirty=None):
@@ -5051,14 +5057,96 @@ def cage_has_cache(cage_obj):
     return False
 
 
-def backup_before_replacing_cache(targets):
-    """Back up once when any target already holds a cache that is about to be replaced."""
-    if not any(cage_has_cache(o) for o in targets):
-        return None
+def cage_disk_cache_dirs(cage_obj):
+    """External cache directories this cage would write to, for cages stored on disk."""
+    dirs = []
+    for m in cage_obj.modifiers:
+        if m.type != 'NODES' or not m.node_group or m.node_group.name != 'Wiggy 0.1':
+            continue
+        if getattr(m, 'bake_target', None) != 'DISK':
+            continue
+        directory = getattr(m, 'bake_directory', '') or ''
+        if directory:
+            resolved = bpy.path.abspath(directory)
+            if resolved not in dirs:
+                dirs.append(resolved)
+    return dirs
+
+
+def snapshot_disk_cache(cage_obj, keep=CACHE_BACKUP_KEEP):
+    """Copy this cage's external cache next to the .blend before it is overwritten.
+
+    A .blend backup cannot restore simulation data that lives in a DISK cache, so the directory
+    is copied and pruned like the project backup. Returns (ok, message).
+    """
+    dirs = [d for d in cage_disk_cache_dirs(cage_obj) if os.path.isdir(d)]
+    if not dirs:
+        return True, ""
+    filepath = bpy.data.filepath
+    if not filepath:
+        return False, "Save the .blend first: Giggle cannot store an external cache snapshot."
+    backup_root = os.path.join(os.path.dirname(filepath), "giggle_backup")
+    try:
+        os.makedirs(backup_root, exist_ok=True)
+    except Exception as e:
+        return False, f"Could not create the backup folder: {e}"
+
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    for source in dirs:
+        name = os.path.basename(os.path.normpath(source)) or "cache"
+        target = os.path.join(backup_root, f"{name}.cache.{stamp}")
+        counter = 1
+        while os.path.exists(target):
+            target = os.path.join(backup_root, f"{name}.cache.{stamp}_{counter}")
+            counter += 1
+        try:
+            shutil.copytree(source, target)
+        except Exception as e:
+            return False, f"Could not snapshot the external cache at {source}: {e}"
+
+        prefix = f"{name}.cache."
+        snapshots = sorted(
+            (os.path.join(backup_root, entry) for entry in os.listdir(backup_root)
+             if entry.startswith(prefix)),
+            key=os.path.getmtime, reverse=True)
+        for old in snapshots[keep:]:
+            try:
+                shutil.rmtree(old)
+            except OSError:
+                pass
+        print(f"[Giggle Backup] External cache snapshot: {target}")
+    return True, ""
+
+
+def prepare_cache_replacement(targets):
+    """Make everything recoverable before a bake overwrites it. Returns (ok, message).
+
+    Refuses to continue when a backup cannot be created: replacing a cache without a recovery
+    point is the failure this whole path exists to prevent.
+    """
+    replacing = [o for o in targets if cage_has_cache(o)]
+    if not replacing:
+        return True, ""
+
+    if not bpy.data.is_saved:
+        return False, ("Save the .blend first: Giggle needs a recovery copy before replacing "
+                       "an existing simulation cache.")
+
     path = create_project_backup()
-    if path:
-        print(f"[Giggle Backup] Project backup created at: {path}")
-    return path
+    if not path:
+        return False, "Could not create the project backup; the existing cache was left alone."
+    print(f"[Giggle Backup] Project backup created at: {path}")
+
+    for cage in replacing:
+        ok, message = snapshot_disk_cache(cage)
+        if not ok:
+            return False, message
+    return True, ""
+
+
+def backup_before_replacing_cache(targets):
+    """Deprecated alias kept for callers outside this file."""
+    return prepare_cache_replacement(targets)
 
 
 def mark_bake_failure(cage_obj, message, had_cache):
@@ -5070,12 +5158,25 @@ def mark_bake_failure(cage_obj, message, had_cache):
         cage_obj['_giggle_outdated_reason'] = message
 
 
+def run_bake_operator(context, cage_obj):
+    """Call Blender's simulation bake operator for one cage.
+
+    Extracted so a test can substitute a failure, which is otherwise impossible to provoke at
+    will: a DISK bake into a path whose parent is a file still returns FINISHED.
+    """
+    with context.temp_override(active_object=cage_obj, selected_objects=[cage_obj]):
+        return bpy.ops.object.simulation_nodes_cache_bake(selected=True)
+
+
 def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, f_end):
     """Bake one simulation cage with verification, keeping the old cache until the new one works.
 
     The existing cache is not deleted first. Blender re-bakes over it (verified: an in-place bake
     with changed physics reproduces the clean-bake result), so a failed bake leaves the previous
     working cache untouched.
+
+    This is not transactional: if Blender overwrites the cache and then fails, the previous
+    cache is gone and only `giggle_backup/` can restore it.
     """
     mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
     if not mod:
@@ -5101,8 +5202,12 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
     context.scene.frame_set(f_start)
     context.view_layer.update()
 
-    with context.temp_override(active_object=cage_obj, selected_objects=[cage_obj]):
-        bake_res = bpy.ops.object.simulation_nodes_cache_bake(selected=True)
+    try:
+        bake_res = run_bake_operator(context, cage_obj)
+    except Exception as exc:
+        msg = f"Blender bake operator raised: {exc}"
+        mark_bake_failure(cage_obj, msg, had_cache)
+        return False, msg
 
     if bake_res != {'FINISHED'}:
         msg = f"Blender bake operator returned {bake_res}"
@@ -5117,8 +5222,15 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
 
     post_fp = compute_zone_fingerprint(cage_obj, context, storage_mode, f_start, f_end)
     if pre_fp != post_fp:
-        save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=False, reason="Dependencies modified during baking")
-        return False, "Dependencies modified during baking"
+        # The cache on disk is now the new one; it just does not describe this configuration.
+        # Nothing is restored here, so the marker has to say the cache cannot be trusted.
+        msg = "Dependencies modified during baking"
+        save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=False, reason=msg)
+        mark_bake_failure(cage_obj, msg, had_cache)
+        cage_obj['_giggle_status'] = 'OUTDATED'
+        cage_obj['_giggle_last_known_valid'] = False
+        cage_obj['_giggle_outdated_reason'] = msg
+        return False, msg
 
     cage_obj.pop('_giggle_last_bake_error', None)
     save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=True, reason="")
@@ -5152,7 +5264,10 @@ class GIGGLE_OT_bake_all_cages(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
-        backup_before_replacing_cache(sim_objs)
+        ok_backup, backup_msg = prepare_cache_replacement(sim_objs)
+        if not ok_backup:
+            self.report({'ERROR'}, backup_msg)
+            return {'CANCELLED'}
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5239,7 +5354,10 @@ class GIGGLE_OT_bake_selected_cage(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
-        backup_before_replacing_cache([target_sim])
+        ok_backup, backup_msg = prepare_cache_replacement([target_sim])
+        if not ok_backup:
+            self.report({'ERROR'}, backup_msg)
+            return {'CANCELLED'}
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5346,7 +5464,10 @@ class GIGGLE_OT_rebake_all(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
-        backup_before_replacing_cache(sim_objs)
+        ok_backup, backup_msg = prepare_cache_replacement(sim_objs)
+        if not ok_backup:
+            self.report({'ERROR'}, backup_msg)
+            return {'CANCELLED'}
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5444,7 +5565,10 @@ class GIGGLE_OT_bake_missing(Operator):
             self.report({'INFO'}, "All Giggle simulation caches are already baked and up to date.")
             return {'FINISHED'}
 
-        backup_before_replacing_cache(targets)
+        ok_backup, backup_msg = prepare_cache_replacement(targets)
+        if not ok_backup:
+            self.report({'ERROR'}, backup_msg)
+            return {'CANCELLED'}
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]

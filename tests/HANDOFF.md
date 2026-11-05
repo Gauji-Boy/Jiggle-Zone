@@ -31,7 +31,19 @@ every installed Blender. Logs land in `artifacts\<stamp>\` with `summary.txt`.
 - `change.diff` — the whole diff, binaries excluded
 - `files.txt` — changed files with add/remove counts
 - `api.diff` — only changed `def` / `class` lines
-- `summary.txt` — git revision, source and zip hashes, test verdicts
+- `zip-sha.txt` — sha256 of every entry in the ZIP
+- `summary.txt` — git revision, `git status --short`, hashes, test verdicts, packet problems
+
+It exits non-zero, and says why in `summary.txt`, when:
+
+- the working tree is dirty (override with `-AllowDirty`, which is recorded);
+- `-To` does not match the working tree, so the ZIP would not be described by the diff;
+- the ZIP's contents differ from the source tree, or its `__init__.py` is not the working file;
+- the committed blob and the working file differ beyond CRLF/LF.
+
+That last check exists because the repository stores LF and checks out CRLF on Windows, so the
+blob hash and the working-file hash are never equal even for identical content. `summary.txt`
+reports both and the collapsed comparison, so a reviewer can confirm the ZIP matches the commit.
 
 `tests\repack_zip.py` rebuilds the ZIP and fails if any entry has a backslash, contains
 `__pycache__`, or if the packaged `__init__.py` differs from the source.

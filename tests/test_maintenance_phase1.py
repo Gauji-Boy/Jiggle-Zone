@@ -60,6 +60,52 @@ def block_count(mod):
     return sum(len(b.data_blocks) for b in mod.bakes)
 
 
+class _FakeBake:
+    def __init__(self, blocks):
+        self.data_blocks = list(range(blocks))
+
+
+class _FakeMod:
+    """Stand-in for a Wiggy modifier, so cache paths can be tested without a real scene."""
+
+    def __init__(self, name, bake_target='DISK', directory='', blocks=0):
+        self.type = 'NODES'
+        self.node_group = type('_Group', (), {'name': name})()
+        self.bake_target = bake_target
+        self.bake_directory = directory
+        self.bakes = [_FakeBake(blocks)]
+
+
+class _FakeCage:
+    def __init__(self, modifiers):
+        self.modifiers = modifiers
+        self.keys = {}
+
+    def get(self, key, default=None):
+        return self.keys.get(key, default)
+
+    def __setitem__(self, key, value):
+        self.keys[key] = value
+
+    def pop(self, key, default=None):
+        return self.keys.pop(key, default)
+
+
+def live_addon_module():
+    """The enabled add-on's module, which is what the operators actually call into.
+
+    `preferences.addons[key].module` is the dotted name, not the module object, so the loaded
+    module has to be looked up in `sys.modules`.
+    """
+    for key in ("bl_ext.user_default.giggle_physics", "giggle_physics", "giggle_addon"):
+        if bpy.context.preferences.addons.get(key) is None:
+            continue
+        module = sys.modules.get(key)
+        if module is not None:
+            return module
+    return None
+
+
 def test_validity_invalidation():
     ctx = bpy.context
     scene = ctx.scene
@@ -134,6 +180,145 @@ def test_failed_bake_keeps_cache():
     check("cache still valid after the failure", status == 'BAKED', f"{status}: {reason}")
 
 
+def test_bake_operator_failure_keeps_cache():
+    """A failure from the real bake call, not from the validation before it.
+
+    The existing test renames the node group, which returns before Blender is ever asked to
+    bake. This one substitutes the bake call itself, which is the path a disk error or a
+    cancellation actually takes.
+    """
+    ctx = bpy.context
+    cage, mod = get_cage()
+    before_blocks = block_count(mod)
+    before_stamp = cage.get('_giggle_baked_at_timestamp')
+    before_status = cage.get('_giggle_status')
+    before_fp = cage.get('_giggle_bake_fingerprint_json')
+    original = g.run_bake_operator
+
+    try:
+        g.run_bake_operator = lambda context, cage_obj: {'CANCELLED'}
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        check("a cancelled bake operator fails the step", ok is False, err)
+        check("a cancelled bake keeps the old blocks", block_count(mod) == before_blocks,
+              f"{before_blocks} -> {block_count(mod)}")
+        check("a cancelled bake keeps the old stamp",
+              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+        check("a cancelled bake keeps the old fingerprint",
+              cage.get('_giggle_bake_fingerprint_json') == before_fp)
+        check("a cancelled bake keeps the old status", cage.get('_giggle_status') == before_status,
+              f"{before_status} -> {cage.get('_giggle_status')}")
+        check("a cancelled bake records the operator result",
+              'CANCELLED' in (cage.get('_giggle_last_bake_error') or ''),
+              cage.get('_giggle_last_bake_error'))
+        status, reason = g.check_cage_validity(cage, ctx)
+        check("cache still valid after a cancelled bake", status == 'BAKED', f"{status}: {reason}")
+
+        def raising(context, cage_obj):
+            raise RuntimeError("injected bake failure")
+
+        g.run_bake_operator = raising
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        check("an exception from the bake operator fails the step", ok is False, err)
+        check("a raised bake keeps the old blocks", block_count(mod) == before_blocks,
+              f"{before_blocks} -> {block_count(mod)}")
+        check("a raised bake keeps the old stamp",
+              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+        check("a raised bake keeps the old fingerprint",
+              cage.get('_giggle_bake_fingerprint_json') == before_fp)
+        check("a raised bake keeps the old status", cage.get('_giggle_status') == before_status,
+              f"{before_status} -> {cage.get('_giggle_status')}")
+        check("the raised error is recorded",
+              'injected bake failure' in (cage.get('_giggle_last_bake_error') or ''),
+              cage.get('_giggle_last_bake_error'))
+        status, reason = g.check_cage_validity(cage, ctx)
+        check("cache still valid after a raised bake", status == 'BAKED', f"{status}: {reason}")
+    finally:
+        g.run_bake_operator = original
+        cage.pop('_giggle_last_bake_error', None)
+
+
+def test_fingerprint_change_marks_outdated():
+    """The post-bake mismatch branch must not pretend the old cache came back."""
+    ctx = bpy.context
+    cage, mod = get_cage()
+    original = g.compute_zone_fingerprint
+    calls = {'n': 0}
+
+    def drifting(cage_obj, context, storage_mode, f_start, f_end):
+        fingerprint = dict(original(cage_obj, context, storage_mode, f_start, f_end))
+        calls['n'] += 1
+        if calls['n'] > 1:
+            fingerprint['physics'] = f"drifted-{calls['n']}"
+        return fingerprint
+
+    try:
+        g.compute_zone_fingerprint = drifting
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        check("a changed fingerprint fails the step", ok is False, err)
+        check("the reason names the dependency change",
+              'modified' in (err or '').lower(), err)
+        check("the bake really ran, so this is not an early return", block_count(mod) > 0,
+              block_count(mod))
+        check("a changed fingerprint marks the cache OUTDATED",
+              cage.get('_giggle_status') == 'OUTDATED', cage.get('_giggle_status'))
+        check("a changed fingerprint clears the valid flag",
+              cage.get('_giggle_last_known_valid') is False,
+              cage.get('_giggle_last_known_valid'))
+        check("the outdated reason is stored",
+              'modified' in (cage.get('_giggle_outdated_reason') or '').lower(),
+              cage.get('_giggle_outdated_reason'))
+        check("the failure is recorded as a bake error",
+              'modified' in (cage.get('_giggle_last_bake_error') or '').lower(),
+              cage.get('_giggle_last_bake_error'))
+
+        # No rollback is claimed anywhere: the cache that is on disk is the new one, so validity
+        # has to say it cannot be trusted.
+        status, reason = g.check_cage_validity(cage, ctx)
+        check("the cache is not reported valid after a fingerprint change", status != 'BAKED',
+              f"{status}: {reason}")
+    finally:
+        g.compute_zone_fingerprint = original
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        check("a clean rebake restores a valid cache", ok, err)
+        status, reason = g.check_cage_validity(cage, ctx)
+        check("the restored cache reads BAKED", status == 'BAKED', f"{status}: {reason}")
+
+
+def test_bake_operator_refuses_without_backup():
+    """The operator must stop when the recovery copy cannot be made."""
+    cage, mod = get_cage()
+    live = live_addon_module()
+    if live is None or not hasattr(live, 'prepare_cache_replacement') \
+            or not hasattr(bpy.ops.giggle, 'bake_all_cages'):
+        print("SKIP backup gating: add-on is not enabled in this Blender")
+        return
+
+    before_blocks = block_count(mod)
+    before_stamp = cage.get('_giggle_baked_at_timestamp')
+    original = live.prepare_cache_replacement
+    try:
+        live.prepare_cache_replacement = lambda targets: (False, "test: backup unavailable")
+        result = None
+        reported = ""
+        try:
+            result = bpy.ops.giggle.bake_all_cages()
+        except RuntimeError as exc:
+            # Blender raises for a reported ERROR instead of returning CANCELLED.
+            reported = str(exc)
+        check("the bake operator stops when a backup cannot be made",
+              result == {'CANCELLED'} or "backup unavailable" in reported,
+              f"result={result} error={reported}")
+        check("the operator reports why it stopped",
+              "backup unavailable" in reported or result == {'CANCELLED'},
+              f"result={result} error={reported}")
+        check("a refused backup leaves the cache untouched", block_count(mod) == before_blocks,
+              f"{before_blocks} -> {block_count(mod)}")
+        check("a refused backup leaves the stamp untouched",
+              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+    finally:
+        live.prepare_cache_replacement = original
+
+
 def test_ownership():
     ctx = bpy.context
     scene = ctx.scene
@@ -168,7 +353,27 @@ def test_ownership():
     check("a legacy cage is adopted and found", legacy in found)
     check("legacy adoption writes the flag", legacy.get('_giggle_cage') is True)
 
-    for ob in (foreign, owned, legacy, in_collection):
+    # A clothing proxy carries the same metadata a legacy cage does, plus _giggle_proxy, and a
+    # garment binds to it through Surface Deform. Attaching clothes must never turn the proxy into
+    # a simulation cage.
+    proxy = mesh_with_wiggy("Proxy_Target", {
+        "_giggle_source_body": "Body",
+        "_giggle_source_verts": 1000,
+        "_giggle_vg_name": "VG",
+        "_giggle_proxy": True,
+    })
+    garment = bpy.data.objects.new("Garment", bpy.data.meshes.new("Garment"))
+    scene.collection.objects.link(garment)
+    garment.modifiers.new("Giggle_Cage_SurfaceDeform", 'SURFACE_DEFORM').target = proxy
+
+    found = g.get_giggle_simulation_objects(ctx)
+    check("a clothing proxy is not claimed as a cage", proxy not in found)
+    check("a clothing proxy is not stamped with the cage flag", not proxy.get('_giggle_cage'))
+
+    # The garment itself is not a cage either, whatever it is bound to.
+    check("a garment bound to a proxy is not claimed", garment not in found)
+
+    for ob in (foreign, owned, legacy, in_collection, proxy, garment):
         bpy.data.objects.remove(ob, do_unlink=True)
     bpy.data.collections.remove(collection)
 
@@ -303,11 +508,138 @@ def test_backup_policy():
           bpy.context.scene.get("giggle_test_marker") == "dirty-session")
 
 
+def test_disk_cache_snapshot():
+    """A .blend backup cannot restore simulation data that lives outside it."""
+    tmpdir = tempfile.mkdtemp(prefix="giggle_disk_cache_")
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "disk_case.blend"))
+
+    cache = os.path.join(tmpdir, "giggle_cache")
+    other_cache = os.path.join(tmpdir, "other_cache")
+    for directory, filename, payload in ((cache, "frame.bin", b"old-cache"),
+                                         (other_cache, "blob.bin", b"other")):
+        os.makedirs(directory)
+        with open(os.path.join(directory, filename), "wb") as handle:
+            handle.write(payload)
+
+    disk = _FakeMod("Wiggy 0.1", 'DISK', cache, blocks=4)
+    packed = _FakeMod("Wiggy 0.1", 'PACKED', cache, blocks=4)
+    foreign = _FakeMod("Someone Elses Nodes", 'DISK', cache, blocks=4)
+
+    check("a disk cache directory is found",
+          g.cage_disk_cache_dirs(_FakeCage([disk])) == [cache],
+          g.cage_disk_cache_dirs(_FakeCage([disk])))
+    check("a packed cage has no external cache",
+          g.cage_disk_cache_dirs(_FakeCage([packed])) == [],
+          g.cage_disk_cache_dirs(_FakeCage([packed])))
+    check("another add-on's node group is ignored",
+          g.cage_disk_cache_dirs(_FakeCage([foreign])) == [],
+          g.cage_disk_cache_dirs(_FakeCage([foreign])))
+    check("the same directory is only listed once",
+          len(g.cage_disk_cache_dirs(_FakeCage([disk, disk]))) == 1,
+          g.cage_disk_cache_dirs(_FakeCage([disk, disk])))
+
+    backup_root = os.path.join(tmpdir, "giggle_backup")
+    ok, message = g.snapshot_disk_cache(_FakeCage([disk]))
+    check("the external cache is snapshotted", ok, message)
+    snapshots = [n for n in os.listdir(backup_root) if ".cache." in n]
+    check("exactly one snapshot exists", len(snapshots) == 1, snapshots)
+    copied = os.path.join(backup_root, snapshots[0], "frame.bin") if snapshots else ""
+    check("the snapshot holds the cache contents",
+          bool(copied) and os.path.exists(copied) and open(copied, "rb").read() == b"old-cache",
+          copied)
+
+    # Age the snapshot so pruning has something to remove.
+    stale = os.path.join(backup_root, "giggle_cache.cache.20000101_000000")
+    os.makedirs(stale, exist_ok=True)
+    with open(os.path.join(stale, "frame.bin"), "wb") as handle:
+        handle.write(b"stale")
+    os.utime(stale, (1000000000, 1000000000))
+
+    ok, message = g.snapshot_disk_cache(_FakeCage([disk]))
+    kept = [n for n in os.listdir(backup_root) if ".cache." in n]
+    check("a second snapshot succeeds", ok, message)
+    check("old cache snapshots are pruned", len(kept) == g.CACHE_BACKUP_KEEP, kept)
+    check("the stale snapshot is the one removed", stale not in
+          [os.path.join(backup_root, n) for n in kept], kept)
+
+    original_copytree = g.shutil.copytree
+
+    def failing_copytree(*args, **kwargs):
+        raise OSError("injected copy failure")
+
+    try:
+        g.shutil.copytree = failing_copytree
+        ok, message = g.snapshot_disk_cache(_FakeCage([disk]))
+        check("a failed copy is reported, not raised", ok is False, f"{ok} {message}")
+        check("the copy failure is explained", "injected copy failure" in message, message)
+    finally:
+        g.shutil.copytree = original_copytree
+
+    # Nothing exists for a cage whose directory has never been written.
+    missing = _FakeMod("Wiggy 0.1", 'DISK', os.path.join(tmpdir, "never_baked"), blocks=0)
+    ok, message = g.snapshot_disk_cache(_FakeCage([missing]))
+    check("a cage with no disk cache needs no snapshot", ok and message == "", f"{ok} {message}")
+
+
+def test_prepare_cache_replacement():
+    tmpdir = tempfile.mkdtemp(prefix="giggle_replace_")
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "replace_case.blend"))
+
+    cache = os.path.join(tmpdir, "giggle_cache")
+    os.makedirs(cache)
+    marker = os.path.join(cache, "keep.bin")
+    with open(marker, "wb") as handle:
+        handle.write(b"keep-me")
+
+    cached = _FakeCage([_FakeMod("Wiggy 0.1", 'DISK', cache, blocks=3)])
+    uncached = _FakeCage([_FakeMod("Wiggy 0.1", 'DISK', cache, blocks=0)])
+
+    ok, message = g.prepare_cache_replacement([uncached])
+    check("nothing is required when no cache would be replaced", ok and message == "",
+          f"{ok} {message}")
+
+    original_backup = g.create_project_backup
+    try:
+        g.create_project_backup = lambda *args, **kwargs: None
+        ok, message = g.prepare_cache_replacement([cached])
+        check("a missing project backup refuses the replacement", ok is False, f"{ok} {message}")
+        check("the refusal explains itself", "backup" in message.lower(), message)
+        check("the existing cache is untouched after a refusal",
+              open(marker, "rb").read() == b"keep-me")
+    finally:
+        g.create_project_backup = original_backup
+
+    original_snapshot = g.snapshot_disk_cache
+    try:
+        g.snapshot_disk_cache = lambda cage_obj, keep=None: (False, "injected snapshot failure")
+        try:
+            ok, message = g.prepare_cache_replacement([cached])
+        finally:
+            g.snapshot_disk_cache = original_snapshot
+        check("a missing external snapshot refuses the replacement", ok is False,
+              f"{ok} {message}")
+        check("the snapshot refusal explains itself",
+              "injected snapshot failure" in message, message)
+    finally:
+        g.snapshot_disk_cache = original_snapshot
+
+    ok, message = g.prepare_cache_replacement([cached])
+    check("a saved file with a writable cache passes", ok, message)
+    backup_root = os.path.join(tmpdir, "giggle_backup")
+    baks = [n for n in os.listdir(backup_root) if n.endswith(".bak")] if os.path.isdir(backup_root) else []
+    snaps = [n for n in os.listdir(backup_root) if ".cache." in n] if os.path.isdir(backup_root) else []
+    check("the .blend is backed up before the replacement", bool(baks), baks)
+    check("the external cache is backed up before the replacement", bool(snaps), snaps)
+
+
 def main():
     print("BLENDER", bpy.app.version_string, "FILE", bpy.data.filepath)
     if bpy.data.filepath.endswith("poc_cage_xpbd_kasumi.blend"):
         test_validity_invalidation()
         test_failed_bake_keeps_cache()
+        test_bake_operator_failure_keeps_cache()
+        test_fingerprint_change_marks_outdated()
+        test_bake_operator_refuses_without_backup()
         test_bake_path_has_no_pre_delete()
         test_ownership()
         test_scene_isolation()
@@ -316,6 +648,8 @@ def main():
     else:
         print("SKIP scene tests: open poc_cage_xpbd_kasumi.blend to run them")
     test_backup_policy()
+    test_disk_cache_snapshot()
+    test_prepare_cache_replacement()
 
     print(f"RESULT {CHECKS - len(FAILURES)}/{CHECKS} checks passed")
     if FAILURES:
