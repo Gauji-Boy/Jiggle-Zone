@@ -9,6 +9,7 @@
 
 param(
     [string]$Blend = (Join-Path (Split-Path -Parent $PSScriptRoot) 'poc_cage_xpbd_kasumi.blend'),
+    [string]$SecondaryBlend = (Join-Path (Split-Path -Parent $PSScriptRoot) 'JitterArmatureModel.blend'),
     [string[]]$Blender = @(
         'D:\blender-5.3.0-beta+v53.a6f145b151fa-windows.amd64-release\blender.exe',
         'D:\Blender 5.2\blender.exe'
@@ -62,17 +63,28 @@ foreach ($exe in $Blender) {
     }
 
     foreach ($suite in @(
-            @{ Key = 'maintenance'; Name = 'maintenance phase 1'; Path = (Join-Path $PSScriptRoot 'test_maintenance_phase1.py') },
-            @{ Key = 'acceptance'; Name = 'milestone 3 acceptance'; Path = (Join-Path $root 'scratch\test_milestone3_acceptance.py') }
+            @{ Key = 'maintenance'; Name = 'maintenance phase 1'; Path = (Join-Path $PSScriptRoot 'test_maintenance_phase1.py'); Blend = $Blend },
+            @{ Key = 'acceptance'; Name = 'milestone 3 acceptance'; Path = (Join-Path $root 'scratch\test_milestone3_acceptance.py'); Blend = $Blend },
+            @{ Key = 'viewport'; Name = 'runtime viewport QA'; Path = (Join-Path $PSScriptRoot 'runtime\test_viewport_qa.py'); Blend = $Blend },
+            @{ Key = 'secondary'; Name = 'secondary scene smoke'; Path = (Join-Path $PSScriptRoot 'runtime\test_secondary_scene.py'); Blend = $SecondaryBlend },
+            @{ Key = 'install'; Name = 'clean install from zip'; Path = (Join-Path $PSScriptRoot 'runtime\test_clean_install_zip.py'); Blend = $null }
         )) {
         if (-not (Test-Path $suite.Path)) {
             $summary.Add("FAIL  $($suite.Name) on $label : script missing ($($suite.Path))")
             $failed++
             continue
         }
+        if ($suite.Blend -and -not (Test-Path $suite.Blend)) {
+            $summary.Add("SKIP  $($suite.Name) on $label : blend missing ($($suite.Blend))")
+            continue
+        }
         $log = Join-Path $out ("{0}_{1}.log" -f $label, $suite.Key)
         Write-Host "=== Blender $label : $($suite.Name) ==="
-        & $exe -b $Blend --python-exit-code 1 --python $suite.Path *> $log
+        if ($suite.Blend) {
+            & $exe -b $suite.Blend --python-exit-code 1 --python $suite.Path *> $log
+        } else {
+            & $exe -b --factory-startup --python-exit-code 1 --python $suite.Path *> $log
+        }
         $code = $LASTEXITCODE
         $ran++
         $verdict = if ($code -eq 0) { 'PASS' } else { 'FAIL' }
@@ -80,7 +92,7 @@ foreach ($exe in $Blender) {
         $checks = (Select-String -Path $log -Pattern '^RESULT ' | Select-Object -Last 1).Line
         $summary.Add(("{0}  {1,-24} Blender {2} (exit {3}){4}" -f $verdict, $suite.Name, $label, $code,
                 $(if ($checks) { " - $checks" } else { '' })))
-        Get-Content $log | Select-String -Pattern '^(PASS|FAIL|SKIP)|ALL MILESTONE|AssertionError' |
+        Get-Content $log | Select-String -Pattern '^(PASS|FAIL|SKIP|NOT TESTED)|ALL MILESTONE|AssertionError' |
             ForEach-Object { Write-Host $_.Line }
     }
 }

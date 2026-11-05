@@ -15,4 +15,4 @@ __pycache__/
 artifacts/
 
 # Review packets are rebuilt from git on demand
-scratch/reviews/*.diff
+scratch/reviews/

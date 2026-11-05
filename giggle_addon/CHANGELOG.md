@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — maintenance phase 1 (reliability, no new features)
+## 2.0.1 — maintenance phase 1 (reliability, no new features)
 
 - **Cache invalidation now uses the requested settings** (`check_cage_validity`): extending the
   scene range, changing the settings range, or switching `PACKED`/`DISK` marks the cache

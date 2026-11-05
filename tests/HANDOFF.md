@@ -33,7 +33,22 @@ every installed Blender. Logs land in `artifacts\<stamp>\` with `summary.txt`.
 - `api.diff` — only changed `def` / `class` lines
 - `summary.txt` — git revision, source and zip hashes, test verdicts
 
+`tests\repack_zip.py` rebuilds the ZIP and fails if any entry has a backslash, contains
+`__pycache__`, or if the packaged `__init__.py` differs from the source.
+
 ## Runtime QA (handoff text)
+
+The repeatable runtime checks live in `tests\runtime\` and already run inside `run_tests.ps1`:
+
+| Script                            | Needs                    | Checks                                            |
+| --------------------------------- | ------------------------ | ------------------------------------------------- |
+| `test_viewport_qa.py`             | `poc_cage_xpbd_kasumi`   | rewind drift on the evaluated mesh, finite frames, followers, cage modifier |
+| `test_secondary_scene.py`         | any scene                | registration, operator availability, scene props   |
+| `test_clean_install_zip.py`       | the built ZIP            | install, byte parity, version agreement, operators |
+
+They exit non-zero on failure. A QA report is only meaningful if the script can fail — the earlier
+viewport script caught every exception and printed `PASS`, and measured `obj.data` (which no
+modifier can move), so it reported zero drift no matter what happened.
 
 > You are testing an update to Giggle Physics. Your job is runtime verification, not redesign.
 >
@@ -54,6 +69,9 @@ every installed Blender. Logs land in `artifacts\<stamp>\` with `summary.txt`.
 Read `change.diff`, `api.diff` and `summary.txt`. Re-check the claims that matter against the
 source, then verify the ZIP: its `giggle_addon/__init__.py` entry must hash the same as
 `giggle_addon/__init__.py` in the tree.
+
+Version numbers must agree in three places: `giggle_addon/blender_manifest.toml`, `bl_info` in
+`giggle_addon/__init__.py`, and the top `##` heading in `giggle_addon/CHANGELOG.md`.
 
 ## Known limits in the test suite
 
