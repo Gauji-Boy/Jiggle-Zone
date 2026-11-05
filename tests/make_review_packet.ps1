@@ -43,17 +43,20 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash
 }
 
-function Get-NormalisedHash([string]$Path) {
-    # SHA-256 of the file with CRLF collapsed to LF, i.e. what git stores.
-    $bytes = [System.IO.File]::ReadAllBytes($Path)
+function Get-NormalisedBytesHash([byte[]]$Bytes) {
+    # SHA-256 with CRLF collapsed to LF, i.e. what git stores.
     $stream = New-Object System.IO.MemoryStream
-    for ($i = 0; $i -lt $bytes.Length; $i++) {
-        if ($bytes[$i] -eq 13 -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 10) { continue }
-        $stream.WriteByte($bytes[$i])
+    for ($i = 0; $i -lt $Bytes.Length; $i++) {
+        if ($Bytes[$i] -eq 13 -and ($i + 1) -lt $Bytes.Length -and $Bytes[$i + 1] -eq 10) { continue }
+        $stream.WriteByte($Bytes[$i])
     }
     $hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($stream.ToArray())
     $stream.Dispose()
     return ([BitConverter]::ToString($hash) -replace '-', '')
+}
+
+function Get-NormalisedHash([string]$Path) {
+    return (Get-NormalisedBytesHash ([System.IO.File]::ReadAllBytes($Path)))
 }
 
 # 1. Working tree state. A packet taken over uncommitted edits cannot be checked against the diff.
@@ -71,8 +74,8 @@ if ($diffAgainstTarget.Count -gt 0) {
 
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-$rev = (git -C $root rev-parse --short $To)
-$base = (git -C $root rev-parse --short $From)
+$rev = (git -C $root rev-parse --short "${To}^{commit}")
+$base = (git -C $root rev-parse --short "${From}^{commit}")
 $branch = (git -C $root rev-parse --abbrev-ref HEAD)
 
 # 2. The diff itself, always from commits.
@@ -146,8 +149,10 @@ if (-not (Test-Path $zip)) {
         $onDisk = Join-Path (Join-Path $root 'giggle_addon') ($relative -replace '/', '\')
         if (-not (Test-Path $onDisk)) {
             Fail "zip entry $($entry.FullName) has no file in the source tree"
-        } elseif ((Get-Sha256 $onDisk) -ne $hash) {
-            Fail "zip entry $($entry.FullName) differs from the source tree; rebuild the ZIP"
+        } elseif ((Get-NormalisedHash $onDisk) -ne (Get-NormalisedBytesHash $bytes)) {
+            # The repository stores LF and checks out CRLF, so an entry can hold either form of
+            # the same content. Compare the content, not the line endings.
+            Fail "zip entry $($entry.FullName) differs from the source tree beyond line endings; rebuild the ZIP"
         }
     }
     $archive.Dispose()
