@@ -4641,7 +4641,8 @@ def get_driving_armature(cage_or_mesh):
                     return m.object
             if src_body.parent and getattr(src_body.parent, "type", "") == 'ARMATURE':
                 return src_body.parent
-    for o in bpy.data.objects:
+    scene = getattr(bpy.context, 'scene', None)
+    for o in (scene.objects if scene is not None else bpy.data.objects):
         if o.type == 'ARMATURE' and o.animation_data and o.animation_data.action:
             return o
     return None
@@ -4770,14 +4771,55 @@ def save_zone_bake_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_e
     cage_or_mesh.pop('_giggle_settings_modified_at', None)
 
 
+def get_surface_deform_targets():
+    """Objects that some mesh drives through a Surface Deform modifier."""
+    targets = set()
+    for ob in bpy.data.objects:
+        for m in ob.modifiers:
+            if m.type == 'SURFACE_DEFORM' and m.target:
+                targets.add(m.target)
+    return targets
+
+
+def is_giggle_owned_cage(obj, bind_targets=None):
+    """True only for cages this add-on created or can prove it drives.
+
+    A mesh that merely ends in '_Cage' or sits in a 'Giggle_Cages' collection belongs to whoever
+    made it. Giggle is a Wiggy fork, so trusting those names let it bake and clear another
+    add-on's simulation.
+    """
+    if not obj or obj.type != 'MESH':
+        return False
+    if obj.get('_giggle_cage'):
+        return True
+    # 1.2 and 2.0.0 cages always store the source body and vertex group; adopt them once.
+    if obj.get('_giggle_source_body') and obj.get('_giggle_vg_name'):
+        obj['_giggle_cage'] = True
+        return True
+    # Cages written before 1.2 carry no metadata at all. The only structural proof is that a body
+    # mesh is bound to them through Surface Deform, which is how Giggle drives a cage.
+    if bind_targets is None:
+        bind_targets = get_surface_deform_targets()
+    if obj in bind_targets and any(
+            m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
+            for m in obj.modifiers):
+        obj['_giggle_cage'] = True
+        return True
+    return False
+
+
 def get_giggle_simulation_objects(context, obj=None):
-    """Return all Giggle-managed simulation objects (cages or character mesh if full-mesh)."""
+    """Return Giggle-managed simulation objects in the active scene (cages or a full-mesh zone)."""
     sim_objs = []
-    for o in bpy.data.objects:
-        if o.type == 'MESH' and (o.get('_giggle_cage') or o.name.endswith('_Cage') or (o.users_collection and any(c.name == 'Giggle_Cages' for c in o.users_collection))):
-            if any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in o.modifiers):
-                if o not in sim_objs:
-                    sim_objs.append(o)
+    scene = getattr(context, 'scene', None)
+    objects = scene.objects if scene is not None else bpy.data.objects
+    bind_targets = get_surface_deform_targets()
+    for o in objects:
+        if not is_giggle_owned_cage(o, bind_targets):
+            continue
+        if any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in o.modifiers):
+            if o not in sim_objs:
+                sim_objs.append(o)
     target = obj or context.active_object
     if target and target.type == 'MESH':
         full_mods = [m for m in get_giggle_modifiers(target) if m.show_viewport and not is_zone_in_cage_mode(target, m)]
@@ -4815,6 +4857,17 @@ def get_cage_bake_status(cage_obj):
         return st, frange, storage, reason
 
     return 'BAKED', frange, storage, "Matches Setup"
+
+
+def get_requested_bake_config(context):
+    """Return (storage_mode, frame_start, frame_end) as requested by the scene settings."""
+    scene = context.scene
+    settings = getattr(scene, 'giggle_settings', None)
+    storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
+    use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
+    if settings is None or use_scene_range:
+        return storage_mode, scene.frame_start, scene.frame_end
+    return storage_mode, settings.bake_frame_start, settings.bake_frame_end
 
 
 def check_cage_validity(cage_obj, context):
@@ -4862,10 +4915,21 @@ def check_cage_validity(cage_obj, context):
         cage_obj['_giggle_last_known_valid'] = False
         cage_obj['_giggle_outdated_reason'] = "Invalid fingerprint JSON"
         return 'OUTDATED', "Invalid fingerprint JSON"
-    
-    frange = cage_obj.get('_giggle_baked_frame_range', (context.scene.frame_start, context.scene.frame_end))
-    storage = cage_obj.get('_giggle_baked_storage', 'PACKED')
-    curr_fp = compute_zone_fingerprint(cage_obj, context, storage, frange[0], frange[1])
+
+    saved_schema = cage_obj.get('_giggle_bake_schema_version', None)
+    if saved_schema != FINGERPRINT_SCHEMA:
+        reason = f"Cache uses fingerprint schema {saved_schema}, expected {FINGERPRINT_SCHEMA}"
+        cage_obj['_giggle_status'] = 'OUTDATED'
+        cage_obj['_giggle_last_known_valid'] = False
+        cage_obj['_giggle_outdated_reason'] = reason
+        return 'OUTDATED', reason
+
+    # Compare the cache against what the scene asks for now, not against the values stored in the
+    # cache. Reading the stored values back on both sides always matched.
+    requested_storage, req_start, req_end = get_requested_bake_config(context)
+    stored_range = cage_obj.get('_giggle_baked_frame_range', (req_start, req_end))
+    stored_storage = cage_obj.get('_giggle_baked_storage', requested_storage)
+    curr_fp = compute_zone_fingerprint(cage_obj, context, requested_storage, req_start, req_end)
     
     status = 'BAKED'
     reason = "Cache matches setup"
@@ -4883,7 +4947,9 @@ def check_cage_validity(cage_obj, context):
         reason = "Armature rest pose or rig constraints modified"
     elif saved_fp.get('simulation') != curr_fp['simulation']:
         status = 'OUTDATED'
-        reason = "Frame range, FPS, or storage mode modified"
+        reason = ("Frame range, FPS, or storage mode changed "
+                  f"(cache: {stored_range[0]}-{stored_range[1]} {stored_storage}, "
+                  f"requested: {req_start}-{req_end} {requested_storage})")
         
     cage_obj['_giggle_status'] = status
     cage_obj['_giggle_last_known_valid'] = (status == 'BAKED')
@@ -4910,8 +4976,14 @@ def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
     return True, "Preflight passed"
 
 
-def create_project_backup():
-    """Create a recoverable copy of the saved .blend file before cache modification."""
+BACKUP_KEEP = 1
+
+
+def create_project_backup(keep=BACKUP_KEEP):
+    """Copy the saved .blend into giggle_backup/ and keep only the newest `keep` copies.
+
+    Returns the path of the newest backup, or None when the file was never saved.
+    """
     if not bpy.data.is_saved:
         return None
     try:
@@ -4921,28 +4993,59 @@ def create_project_backup():
         backup_dir = os.path.join(os.path.dirname(filepath), "giggle_backup")
         os.makedirs(backup_dir, exist_ok=True)
         basename = os.path.basename(filepath)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(backup_dir, f"{basename}.{timestamp}.bak")
-        shutil.copy2(filepath, backup_path)
-        return backup_path
+        prefix = f"{basename}."
+        existing = sorted(
+            (os.path.join(backup_dir, name) for name in os.listdir(backup_dir)
+             if name.startswith(prefix) and name.endswith(".bak")),
+            key=os.path.getmtime, reverse=True)
+
+        src_stat = os.stat(filepath)
+        unchanged = bool(existing) and (
+            os.path.getsize(existing[0]) == src_stat.st_size
+            and int(os.path.getmtime(existing[0])) == int(src_stat.st_mtime)
+        )
+        if unchanged:
+            newest = existing[0]
+        else:
+            newest = os.path.join(backup_dir, f"{basename}.{time.strftime('%Y%m%d_%H%M%S')}.bak")
+            shutil.copy2(filepath, newest)
+            existing.insert(0, newest)
+
+        for old in existing[keep:]:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        return newest
     except Exception as e:
         print(f"[Giggle Backup Warning] Could not create backup copy: {e}")
         return None
 
 
+def mark_bake_failure(cage_obj, message, had_cache):
+    """Record a failed bake without throwing away the status of a cache that is still there."""
+    cage_obj['_giggle_last_bake_error'] = message
+    if not had_cache:
+        cage_obj['_giggle_status'] = 'FAILED'
+        cage_obj['_giggle_last_known_valid'] = False
+        cage_obj['_giggle_outdated_reason'] = message
+
+
 def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, f_end):
-    """Bake a single simulation cage individually with full verification and fingerprinting."""
-    pre_fp = compute_zone_fingerprint(cage_obj, context, storage_mode, f_start, f_end)
+    """Bake one simulation cage with verification, keeping the old cache until the new one works.
 
-    try:
-        with context.temp_override(active_object=cage_obj, selected_objects=[cage_obj]):
-            bpy.ops.object.simulation_nodes_cache_delete(selected=True)
-    except Exception:
-        pass
-
+    The existing cache is not deleted first. Blender re-bakes over it (verified: an in-place bake
+    with changed physics reproduces the clean-bake result), so a failed bake leaves the previous
+    working cache untouched.
+    """
     mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
     if not mod:
-        return False, "Missing Wiggy 0.1 simulation modifier"
+        msg = "Missing Wiggy 0.1 simulation modifier"
+        cage_obj['_giggle_last_bake_error'] = msg
+        return False, msg
+
+    pre_fp = compute_zone_fingerprint(cage_obj, context, storage_mode, f_start, f_end)
+    had_cache = any(len(b.data_blocks) > 0 for b in mod.bakes)
 
     mod.bake_target = storage_mode
     if storage_mode == 'DISK':
@@ -4951,7 +5054,7 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
         b.frame_start = f_start
         b.frame_end = f_end
 
-    for ob in bpy.data.objects:
+    for ob in context.view_layer.objects:
         ob.select_set(False)
     cage_obj.select_set(True)
     context.view_layer.objects.active = cage_obj
@@ -4963,23 +5066,22 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
         bake_res = bpy.ops.object.simulation_nodes_cache_bake(selected=True)
 
     if bake_res != {'FINISHED'}:
-        cage_obj['_giggle_status'] = 'FAILED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = f"Blender bake operator returned {bake_res}"
-        return False, f"Blender bake operator returned {bake_res}"
+        msg = f"Blender bake operator returned {bake_res}"
+        mark_bake_failure(cage_obj, msg, had_cache)
+        return False, msg
 
     has_blocks = any(len(b.data_blocks) > 0 for b in mod.bakes)
     if not has_blocks:
-        cage_obj['_giggle_status'] = 'FAILED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "Bake produced 0 simulation cache blocks"
-        return False, "Bake produced 0 simulation cache blocks"
+        msg = "Bake produced 0 simulation cache blocks"
+        mark_bake_failure(cage_obj, msg, had_cache)
+        return False, msg
 
     post_fp = compute_zone_fingerprint(cage_obj, context, storage_mode, f_start, f_end)
     if pre_fp != post_fp:
         save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=False, reason="Dependencies modified during baking")
         return False, "Dependencies modified during baking"
 
+    cage_obj.pop('_giggle_last_bake_error', None)
     save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=True, reason="")
     return True, "Success"
 
@@ -5042,7 +5144,7 @@ class GIGGLE_OT_bake_all_cages(Operator):
             return {'CANCELLED'}
 
         finally:
-            for o in bpy.data.objects:
+            for o in context.view_layer.objects:
                 o.select_set(False)
             for o in orig_selected:
                 try:
@@ -5114,7 +5216,7 @@ class GIGGLE_OT_bake_selected_cage(Operator):
             return {'CANCELLED'}
 
         finally:
-            for o in bpy.data.objects:
+            for o in context.view_layer.objects:
                 o.select_set(False)
             for o in orig_selected:
                 try:
@@ -5236,7 +5338,7 @@ class GIGGLE_OT_rebake_all(Operator):
             return {'CANCELLED'}
 
         finally:
-            for o in bpy.data.objects:
+            for o in context.view_layer.objects:
                 o.select_set(False)
             for o in orig_selected:
                 try:
@@ -5332,7 +5434,7 @@ class GIGGLE_OT_bake_missing(Operator):
             return {'CANCELLED'}
 
         finally:
-            for o in bpy.data.objects:
+            for o in context.view_layer.objects:
                 o.select_set(False)
             for o in orig_selected:
                 try:
@@ -7634,8 +7736,9 @@ def render_pre_cache_check(scene):
             return
         outdated = []
         unbaked = []
-        for o in bpy.data.objects:
-            if o.type == 'MESH' and (o.get('_giggle_cage') or o.name.endswith('_Cage') or (o.users_collection and any(c.name == 'Giggle_Cages' for c in o.users_collection))):
+        bind_targets = get_surface_deform_targets()
+        for o in scene.objects:
+            if is_giggle_owned_cage(o, bind_targets):
                 st, reason = check_cage_validity(o, bpy.context)
                 if st == 'OUTDATED':
                     outdated.append(f"{o.name} ({reason})")

@@ -32,8 +32,9 @@ installing the zip. Not a server, no concurrency.
    - **Problem:** if the bake fails or produces zero blocks, the previous working cache is
      already gone. The only fallback is the file copy from finding 3, which does not contain
      unsaved edits.
-   - **Fix:** bake first and purge after `{'FINISHED'}` plus a non-zero block count, or bake into
-     a temporary target and swap.
+   - **Fix:** delete the pre-delete call. Measured: Blender re-bakes over an existing cache (an
+     in-place bake with changed physics reproduced the clean-bake result), so the old cache
+     survives a failed bake without any extra machinery.
    - **If we skip it:** one bad bake at frame 12 of 200 costs the artist the whole cache.
 
 3. **Every Rebake All writes a full copy of the .blend and never cleans up**
@@ -225,3 +226,11 @@ come from reading the code, not from a live repro (there is no two-scene file an
 rig here).
 Measured and fine: status reads are free, fingerprint is 0.15–0.22 s per cage on the POC file,
 wardrobe lookup is 0.2 ms on 176 objects.
+
+**Status after maintenance phase 1 (2026-11-05):**
+- Fixed: 1 (range, storage, schema), 2 (no pre-delete; failed bake keeps the old cache),
+  3 (one backup kept, no copy when the file did not change), 6 (ownership flag plus a Surface
+  Deform proof, name and collection rules dropped), 20 (discovery is scene-scoped).
+- Tests: `tests/test_maintenance_phase1.py` (30 checks) passes on Blender 5.2.2 LTS and
+  5.3.0 Beta, and `scratch/test_milestone3_acceptance.py` still passes on both.
+- Not yet fixed: 4, 5, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19.

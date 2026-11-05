@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — maintenance phase 1 (reliability, no new features)
+
+- **Cache invalidation now uses the requested settings** (`check_cage_validity`): extending the
+  scene range, changing the settings range, or switching `PACKED`/`DISK` marks the cache
+  `OUTDATED` instead of `BAKED`. The comparison previously read the stored values back on both
+  sides, so it always matched.
+- **Fingerprint schema is enforced**: a cache written with a different
+  `FINGERPRINT_SCHEMA` is reported `OUTDATED` with the reason, instead of being judged with the
+  current layout.
+- **Rebake no longer deletes the cache first**: `execute_cage_bake_step` bakes over the existing
+  cache (Blender re-bakes in place — verified against a clean bake) and only records the new
+  fingerprint on success. A failed bake keeps the previous working cache and its status.
+- **Backups are pruned**: `create_project_backup` keeps the newest copy only, skips the copy when
+  the `.blend` has not changed since the last one, and no longer leaves one 150 MB file per click.
+- **Simulation ownership is explicit**: discovery only claims cages created by Giggle (or proven
+  by a Surface Deform bind / the 1.2 body link). A mesh that merely ends in `_Cage` or sits in a
+  `Giggle_Cages` collection is left alone, so another Wiggy-based add-on's simulation can no
+  longer be baked or cleared.
+- **Operations stay in the active scene**: discovery, the render pre-flight check and the
+  armature fallback no longer walk `bpy.data.objects`, so a second scene's cages are not baked
+  or cleared.
+- **Tests**: added `tests/test_maintenance_phase1.py` (30 checks covering the five areas above)
+  and `tests/run_tests.ps1`, which runs it plus the Milestone 3 acceptance suite on Blender 5.2
+  and 5.3.
+
 ## 2.0.0 — Cage-Accelerated XPBD & Simulation Cache Manager
 
 ### Milestone 1: Performance Foundation
