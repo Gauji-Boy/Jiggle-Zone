@@ -198,6 +198,66 @@ def test_scene_isolation():
         bpy.data.scenes.remove(other)
 
 
+def test_bake_path_has_no_pre_delete():
+    import inspect
+
+    source = inspect.getsource(g.execute_cage_bake_step)
+    check("bake path never deletes the cache first",
+          'simulation_nodes_cache_delete' not in source)
+    check("bake path checks the block count before trusting the result",
+          'has_blocks' in source)
+
+
+def test_surface_deform_scope():
+    ctx = bpy.context
+    scene = ctx.scene
+    local_target = bpy.data.objects.new("Scope_Local", bpy.data.meshes.new("Scope_Local"))
+    far_target = bpy.data.objects.new("Scope_Far", bpy.data.meshes.new("Scope_Far"))
+    scene.collection.objects.link(local_target)
+    scene.collection.objects.link(far_target)
+
+    binder = bpy.data.objects.new("Scope_Binder", bpy.data.meshes.new("Scope_Binder"))
+    scene.collection.objects.link(binder)
+    binder.modifiers.new("sd", 'SURFACE_DEFORM').target = local_target
+
+    other = bpy.data.scenes.new("Scope_Other")
+    far_binder = bpy.data.objects.new("Scope_FarBinder", bpy.data.meshes.new("Scope_FarBinder"))
+    other.collection.objects.link(far_binder)
+    far_binder.modifiers.new("sd", 'SURFACE_DEFORM').target = far_target
+
+    local = g.get_surface_deform_targets(scene.objects)
+    check("a bind in this scene is seen", local_target in local)
+    check("a bind from another scene is not counted", far_target not in local)
+
+    bpy.data.objects.remove(far_binder, do_unlink=True)
+    bpy.data.scenes.remove(other)
+    bpy.data.objects.remove(binder, do_unlink=True)
+    bpy.data.objects.remove(local_target, do_unlink=True)
+    bpy.data.objects.remove(far_target, do_unlink=True)
+
+
+def test_clear_cache_keeps_bystander_metadata():
+    ctx = bpy.context
+    scene = ctx.scene
+
+    if not hasattr(bpy.ops.giggle, 'clear_sim_cache'):
+        print("SKIP clear cache: add-on is not installed in this Blender")
+        return
+
+    bystander = bpy.data.objects.new("Bystander", bpy.data.meshes.new("Bystander"))
+    scene.collection.objects.link(bystander)
+    bystander['_giggle_baked_at_timestamp'] = 123.0
+    bystander['_giggle_bake_fingerprint_json'] = '{"animation": "x"}'
+    ctx.view_layer.objects.active = bystander
+
+    bpy.ops.giggle.clear_sim_cache()
+
+    check("clear cache leaves an unmanaged active object alone",
+          bystander.get('_giggle_baked_at_timestamp') == 123.0 and
+          bystander.get('_giggle_bake_fingerprint_json') == '{"animation": "x"}')
+    bpy.data.objects.remove(bystander, do_unlink=True)
+
+
 def test_backup_policy():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     tmpdir = tempfile.mkdtemp(prefix="giggle_backup_test_")
@@ -221,14 +281,38 @@ def test_backup_policy():
     check("old backups are pruned", len(kept) <= g.BACKUP_KEEP, kept)
     check("newest backup is kept", os.path.basename(newest) in kept, kept)
 
+    # Unsaved edits must be in the backup, not just the copy of the file on disk.
+    # bpy.data.is_dirty is never True in a background session (measured: it stays False after
+    # adding objects, moving them, or writing custom properties), so the flag is passed in
+    # explicitly. The GUI path reads the same flag from bpy.data.is_dirty.
+    bpy.context.scene["giggle_test_marker"] = "dirty-session"
+    dirty_backup = g.create_project_backup(dirty=True)
+    check("unsaved edits trigger a new backup", dirty_backup != newest, dirty_backup)
+    check("the live file path is unchanged",
+          os.path.normcase(bpy.data.filepath) == os.path.normcase(blend), bpy.data.filepath)
+
+    second_dirty = g.create_project_backup(dirty=True)
+    check("two backups in the same second get different files", second_dirty != dirty_backup,
+          f"{dirty_backup} vs {second_dirty}")
+    kept = [n for n in os.listdir(backup_dir) if n.endswith(".bak")]
+    check("the newest dirty backup survives pruning",
+          os.path.basename(second_dirty) in kept and len(kept) <= g.BACKUP_KEEP, kept)
+
+    bpy.ops.wm.open_mainfile(filepath=second_dirty)
+    check("the backup holds the unsaved session",
+          bpy.context.scene.get("giggle_test_marker") == "dirty-session")
+
 
 def main():
     print("BLENDER", bpy.app.version_string, "FILE", bpy.data.filepath)
     if bpy.data.filepath.endswith("poc_cage_xpbd_kasumi.blend"):
         test_validity_invalidation()
         test_failed_bake_keeps_cache()
+        test_bake_path_has_no_pre_delete()
         test_ownership()
         test_scene_isolation()
+        test_surface_deform_scope()
+        test_clear_cache_keeps_bystander_metadata()
     else:
         print("SKIP scene tests: open poc_cage_xpbd_kasumi.blend to run them")
     test_backup_policy()

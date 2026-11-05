@@ -4771,10 +4771,13 @@ def save_zone_bake_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_e
     cage_or_mesh.pop('_giggle_settings_modified_at', None)
 
 
-def get_surface_deform_targets():
-    """Objects that some mesh drives through a Surface Deform modifier."""
+def get_surface_deform_targets(objects=None):
+    """Objects in `objects` (default: the active scene) that some mesh drives through Surface Deform."""
+    if objects is None:
+        scene = getattr(bpy.context, 'scene', None)
+        objects = scene.objects if scene is not None else bpy.data.objects
     targets = set()
-    for ob in bpy.data.objects:
+    for ob in objects:
         for m in ob.modifiers:
             if m.type == 'SURFACE_DEFORM' and m.target:
                 targets.add(m.target)
@@ -4797,15 +4800,13 @@ def is_giggle_owned_cage(obj, bind_targets=None):
         obj['_giggle_cage'] = True
         return True
     # Cages written before 1.2 carry no metadata at all. The only structural proof is that a body
-    # mesh is bound to them through Surface Deform, which is how Giggle drives a cage.
+    # mesh is bound to them through Surface Deform, which is how Giggle drives a cage. This stays
+    # a per-session test: it is not proof enough to write a permanent ownership flag.
     if bind_targets is None:
         bind_targets = get_surface_deform_targets()
-    if obj in bind_targets and any(
-            m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
-            for m in obj.modifiers):
-        obj['_giggle_cage'] = True
-        return True
-    return False
+    return obj in bind_targets and any(
+        m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
+        for m in obj.modifiers)
 
 
 def get_giggle_simulation_objects(context, obj=None):
@@ -4813,7 +4814,7 @@ def get_giggle_simulation_objects(context, obj=None):
     sim_objs = []
     scene = getattr(context, 'scene', None)
     objects = scene.objects if scene is not None else bpy.data.objects
-    bind_targets = get_surface_deform_targets()
+    bind_targets = get_surface_deform_targets(objects)
     for o in objects:
         if not is_giggle_owned_cage(o, bind_targets):
             continue
@@ -4979,10 +4980,12 @@ def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
 BACKUP_KEEP = 1
 
 
-def create_project_backup(keep=BACKUP_KEEP):
-    """Copy the saved .blend into giggle_backup/ and keep only the newest `keep` copies.
+def create_project_backup(keep=BACKUP_KEEP, dirty=None):
+    """Keep one recoverable copy of the project before a cache is replaced.
 
-    Returns the path of the newest backup, or None when the file was never saved.
+    When the session has unsaved edits the backup is written from the live session, not from the
+    file on disk, otherwise a copy of the saved file is used and is reused while that file has not
+    changed. `dirty` overrides the unsaved-changes test; it defaults to `bpy.data.is_dirty`.
     """
     if not bpy.data.is_saved:
         return None
@@ -4995,23 +4998,38 @@ def create_project_backup(keep=BACKUP_KEEP):
         basename = os.path.basename(filepath)
         prefix = f"{basename}."
         existing = sorted(
-            (os.path.join(backup_dir, name) for name in os.listdir(backup_dir)
-             if name.startswith(prefix) and name.endswith(".bak")),
+            {os.path.join(backup_dir, name) for name in os.listdir(backup_dir)
+             if name.startswith(prefix) and name.endswith(".bak")},
             key=os.path.getmtime, reverse=True)
 
+        if dirty is None:
+            # UI sessions set this when the .blend has unsaved edits. Background sessions never
+            # do, so treat a missing flag as "there may be unsaved work".
+            dirty = bool(getattr(bpy.data, 'is_dirty', True))
         src_stat = os.stat(filepath)
-        unchanged = bool(existing) and (
-            os.path.getsize(existing[0]) == src_stat.st_size
-            and int(os.path.getmtime(existing[0])) == int(src_stat.st_mtime)
-        )
+        unchanged = (not dirty and bool(existing)
+                     and os.path.getsize(existing[0]) == src_stat.st_size
+                     and int(os.path.getmtime(existing[0])) == int(src_stat.st_mtime))
         if unchanged:
             newest = existing[0]
         else:
-            newest = os.path.join(backup_dir, f"{basename}.{time.strftime('%Y%m%d_%H%M%S')}.bak")
-            shutil.copy2(filepath, newest)
-            existing.insert(0, newest)
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            newest = os.path.join(backup_dir, f"{basename}.{stamp}.bak")
+            counter = 1
+            while os.path.exists(newest):
+                newest = os.path.join(backup_dir, f"{basename}.{stamp}_{counter}.bak")
+                counter += 1
+            if dirty:
+                # Write the live session: the scene may hold work the saved file does not have.
+                result = bpy.ops.wm.save_as_mainfile(
+                    filepath=newest, copy=True, check_existing=False, compress=True)
+                if result != {'FINISHED'}:
+                    raise RuntimeError(f"save_as_mainfile returned {result}")
+            else:
+                shutil.copy2(filepath, newest)
 
-        for old in existing[keep:]:
+        keep_list = [newest] + [p for p in existing if os.path.normcase(p) != os.path.normcase(newest)]
+        for old in keep_list[keep:]:
             try:
                 os.remove(old)
             except OSError:
@@ -5020,6 +5038,27 @@ def create_project_backup(keep=BACKUP_KEEP):
     except Exception as e:
         print(f"[Giggle Backup Warning] Could not create backup copy: {e}")
         return None
+
+
+def cage_has_cache(cage_obj):
+    """True when this cage already holds simulation cache blocks."""
+    if not cage_obj:
+        return False
+    for m in cage_obj.modifiers:
+        if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1':
+            if any(len(b.data_blocks) > 0 for b in m.bakes):
+                return True
+    return False
+
+
+def backup_before_replacing_cache(targets):
+    """Back up once when any target already holds a cache that is about to be replaced."""
+    if not any(cage_has_cache(o) for o in targets):
+        return None
+    path = create_project_backup()
+    if path:
+        print(f"[Giggle Backup] Project backup created at: {path}")
+    return path
 
 
 def mark_bake_failure(cage_obj, message, had_cache):
@@ -5113,6 +5152,8 @@ class GIGGLE_OT_bake_all_cages(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
+        backup_before_replacing_cache(sim_objs)
+
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
         orig_frame = scene.frame_current
@@ -5197,6 +5238,8 @@ class GIGGLE_OT_bake_selected_cage(Operator):
         if not ok:
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
+
+        backup_before_replacing_cache([target_sim])
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5303,9 +5346,7 @@ class GIGGLE_OT_rebake_all(Operator):
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
 
-        backup_file = create_project_backup()
-        if backup_file:
-            print(f"[Giggle Backup] Project backup created at: {backup_file}")
+        backup_before_replacing_cache(sim_objs)
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5402,6 +5443,8 @@ class GIGGLE_OT_bake_missing(Operator):
         if not targets:
             self.report({'INFO'}, "All Giggle simulation caches are already baked and up to date.")
             return {'FINISHED'}
+
+        backup_before_replacing_cache(targets)
 
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
@@ -5539,15 +5582,6 @@ class GIGGLE_OT_clear_sim_cache(Operator):
                     failed_objs.append(obj.name)
             except Exception:
                 failed_objs.append(obj.name)
-
-        active = context.active_object
-        if active and active not in sim_objs:
-            active.pop('_giggle_baked_at_timestamp', None)
-            active.pop('_giggle_bake_fingerprint_json', None)
-            active.pop('_giggle_bake_schema_version', None)
-            active.pop('_giggle_baked_frame_range', None)
-            active.pop('_giggle_baked_storage', None)
-            active.pop('_giggle_settings_modified_at', None)
 
         context.scene.frame_set(context.scene.frame_current)
 
@@ -7736,7 +7770,7 @@ def render_pre_cache_check(scene):
             return
         outdated = []
         unbaked = []
-        bind_targets = get_surface_deform_targets()
+        bind_targets = get_surface_deform_targets(scene.objects)
         for o in scene.objects:
             if is_giggle_owned_cage(o, bind_targets):
                 st, reason = check_cage_validity(o, bpy.context)

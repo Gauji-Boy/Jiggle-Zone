@@ -229,8 +229,22 @@ wardrobe lookup is 0.2 ms on 176 objects.
 
 **Status after maintenance phase 1 (2026-11-05):**
 - Fixed: 1 (range, storage, schema), 2 (no pre-delete; failed bake keeps the old cache),
-  3 (one backup kept, no copy when the file did not change), 6 (ownership flag plus a Surface
-  Deform proof, name and collection rules dropped), 20 (discovery is scene-scoped).
-- Tests: `tests/test_maintenance_phase1.py` (30 checks) passes on Blender 5.2.2 LTS and
+  3 (one backup kept, no copy when the file did not change, live session written when unsaved),
+  6 (ownership flag plus a Surface Deform proof, name and collection rules dropped),
+  18 (Clear Cache no longer strips metadata from an unrelated active object),
+  20 (discovery, render check, armature fallback and bind scan are scene-scoped).
+- Backups now run from all four cache-replacing operators (`bake_all`, `bake_selected`,
+  `rebake_all`, `bake_missing`) and only when a cache is actually about to be replaced.
+- Tests: `tests/test_maintenance_phase1.py` (40 checks) passes on Blender 5.2.2 LTS and
   5.3.0 Beta, and `scratch/test_milestone3_acceptance.py` still passes on both.
-- Not yet fixed: 4, 5, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19.
+- Test limitation (finding 2): a bake that fails *after* it has started writing cannot be forced
+  from Python — a DISK bake into a directory whose parent is a file, and a bake started in edit
+  mode, both return success (the edit-mode one even appends a second block set). What is proven
+  is that the code no longer deletes the cache first (checked against the source) and that a bake
+  which fails on a missing/broken modifier leaves the previous blocks, stamp and status intact.
+- Test limitation (finding 3): `bpy.data.is_dirty` is always `False` in a background session
+  (measured: unchanged after adding objects, moving them, writing custom properties and changing
+  frames), so the test passes the dirty flag in explicitly through `create_project_backup(dirty=)`.
+  `bake_all` on the POC file does take the dirty path in practice — the file loads dirty — and its
+  backup open-s and contains the cage with its 20 cache blocks.
+- Not yet fixed: 4, 5, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 19.

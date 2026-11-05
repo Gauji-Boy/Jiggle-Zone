@@ -12,18 +12,25 @@
 - **Rebake no longer deletes the cache first**: `execute_cage_bake_step` bakes over the existing
   cache (Blender re-bakes in place — verified against a clean bake) and only records the new
   fingerprint on success. A failed bake keeps the previous working cache and its status.
-- **Backups are pruned**: `create_project_backup` keeps the newest copy only, skips the copy when
-  the `.blend` has not changed since the last one, and no longer leaves one 150 MB file per click.
+- **Backups are pruned and back up the live session**: `create_project_backup` keeps the newest
+  copy only, skips the copy when the `.blend` has not changed since the last one, never reuses a
+  filename within the same second, and writes the *current session* (not the stale file on disk)
+  when the project has unsaved edits. A cache replacement now backs up from `bake_all`,
+  `bake_selected`, `rebake_all` and `bake_missing`, not only from `rebake_all`, and only when a
+  cache is actually about to be replaced.
 - **Simulation ownership is explicit**: discovery only claims cages created by Giggle (or proven
   by a Surface Deform bind / the 1.2 body link). A mesh that merely ends in `_Cage` or sits in a
   `Giggle_Cages` collection is left alone, so another Wiggy-based add-on's simulation can no
-  longer be baked or cleared.
-- **Operations stay in the active scene**: discovery, the render pre-flight check and the
-  armature fallback no longer walk `bpy.data.objects`, so a second scene's cages are not baked
-  or cleared.
-- **Tests**: added `tests/test_maintenance_phase1.py` (30 checks covering the five areas above)
-  and `tests/run_tests.ps1`, which runs it plus the Milestone 3 acceptance suite on Blender 5.2
-  and 5.3.
+  longer be baked or cleared. A Surface Deform bind is accepted as per-session proof only; it
+  does not stamp a permanent ownership flag on someone else's mesh.
+- **Operations stay in the active scene**: discovery, the render pre-flight check, the armature
+  fallback and the Surface Deform ownership scan are all scoped to `scene.objects`, so a second
+  scene's cages and binds are not baked or cleared.
+- **Clear Cache leaves unrelated objects alone**: `giggle.clear_sim_cache` no longer strips bake
+  metadata from an active object that is not one of the caches being cleared.
+- **Tests**: added `tests/test_maintenance_phase1.py` (40 checks covering the areas above) and
+  `tests/run_tests.ps1`, which runs it plus the Milestone 3 acceptance suite on Blender 5.2 and
+  5.3.
 
 ## 2.0.0 — Cage-Accelerated XPBD & Simulation Cache Manager
 
