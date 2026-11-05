@@ -17,32 +17,41 @@
   filename within the same second, and writes the *current session* (not the stale file on disk)
   when the project has unsaved edits. A cache replacement now backs up from `bake_all`,
   `bake_selected`, `rebake_all` and `bake_missing`, not only from `rebake_all`, and only when a
-  cache is actually about to be replaced.
+  cache is actually about to be replaced. In a background session the unsaved-changes flag cannot
+  be trusted, so the live session is written by default there: one extra save beats a backup that
+  does not contain the work being protected.
 - **Simulation ownership is explicit**: discovery only claims cages created by Giggle (or proven
-  by a Surface Deform bind / the 1.2 body link). A mesh that merely ends in `_Cage` or sits in a
-  `Giggle_Cages` collection is left alone, so another Wiggy-based add-on's simulation can no
-  longer be baked or cleared. A Surface Deform bind is accepted as per-session proof only; it
-  does not stamp a permanent ownership flag on someone else's mesh.
+  by the 1.2 body link / a Surface Deform modifier Giggle itself named, `Giggle_Cage_*`). A mesh
+  that merely ends in `_Cage` or sits in a `Giggle_Cages` collection is left alone, so another
+  Wiggy-based add-on's simulation can no longer be baked or cleared — including a foreign Wiggy
+  cage driven through that add-on's own `Surface Deform`. A Giggle bind is accepted as
+  per-session proof only; it does not stamp a permanent ownership flag on a mesh.
 - **Clothing proxies are never adopted as cages**: the proxy objects created by
   `giggle.attach_clothing_proxy` carry the same `_giggle_source_body` / `_giggle_vg_name` pair a
   legacy cage does, plus a copied Wiggy modifier and a Surface Deform bind from the garment.
-  `_giggle_proxy` is now checked first, so attaching clothes cannot turn a proxy into a bake
-  target.
+  `_giggle_proxy` is checked *before* `_giggle_cage`, and a stale `_giggle_cage` stamp left by an
+  older build is deleted, so attaching clothes cannot turn a proxy into a bake target even in
+  files written by those builds.
 - **External `DISK` caches are backed up too**: a `.blend` backup cannot restore simulation data
   that lives in a cache directory, so `snapshot_disk_cache` copies each cage's `bake_directory`
-  into `giggle_backup/` (pruned to the newest copy) before a bake replaces it.
+  into `giggle_backup/` (pruned to the newest copy) before a bake replaces it. The snapshot label
+  includes a digest of the source path, so two caches both named `giggle_cache` cannot prune each
+  other's copies.
 - **A bake will not replace a cache it cannot back up**: `prepare_cache_replacement` returns a
   failure when the file is unsaved or a backup cannot be written, and `bake_all_cages`,
   `bake_selected_cage`, `rebake_all` and `bake_missing` now cancel with the reason instead of
   overwriting the cache. This is a recovery point, not a transaction: if Blender overwrites the
   cache and then fails, only `giggle_backup/` has the previous data.
-- **Failed-bake coverage includes the real bake call**: `run_bake_operator` is now a separate
-  seam, so tests can make the bake either return `CANCELLED` or raise, and assert that blocks,
-  timestamp, fingerprint and status are unchanged. The post-bake fingerprint-mismatch branch is
-  tested too: it marks the cache `OUTDATED` and does not pretend the old cache came back.
-- **Tests**: `tests/test_maintenance_phase1.py` (93 checks covering the areas above),
-  `tests/runtime/` (viewport, secondary scene, clean ZIP install) and `tests/run_tests.ps1`,
-  which runs all of them on Blender 5.2 and 5.3.
+- **Bake-failure handling is covered by injected operator failures**: `run_bake_operator` is now a
+  separate seam, so tests can make the bake return `CANCELLED` or raise at the operator boundary
+  and assert that blocks, timestamp, fingerprint and status are unchanged. The
+  post-bake fingerprint-mismatch branch is tested too: it marks the cache `OUTDATED` and does not
+  pretend the old cache came back. This does *not* cover a real mid-write failure inside Blender's
+  bake; a genuine I/O failure part-way through a bake remains unverified (no reliable way to force
+  one from Python was found — a DISK bake into a blocked path still reports `FINISHED`).
+- **Tests**: `tests/test_maintenance_phase1.py` (103 checks covering the areas above),
+  `tests/runtime/` (viewport evaluation, secondary scene, clean ZIP install) and
+  `tests/run_tests.ps1`, which runs all of them on Blender 5.2 and 5.3.
 - **Operations stay in the active scene**: discovery, the render pre-flight check, the armature
   fallback and the Surface Deform ownership scan are all scoped to `scene.objects`, so a second
   scene's cages and binds are not baked or cleared.

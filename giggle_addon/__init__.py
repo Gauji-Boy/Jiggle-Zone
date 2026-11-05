@@ -4771,6 +4771,9 @@ def save_zone_bake_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_e
     cage_or_mesh.pop('_giggle_settings_modified_at', None)
 
 
+GIGGLE_CAGE_BIND_PREFIX = "Giggle_Cage_"
+
+
 def get_surface_deform_targets(objects=None):
     """Objects in `objects` (default: the active scene) that some mesh drives through Surface Deform."""
     if objects is None:
@@ -4784,6 +4787,25 @@ def get_surface_deform_targets(objects=None):
     return targets
 
 
+def get_giggle_cage_bind_targets(objects=None):
+    """Surface Deform targets driven by a modifier Giggle named.
+
+    Only a bind Giggle created counts as ownership proof. A pre-1.2 cage carries no metadata, so
+    the bind is the only evidence, and another add-on driving its own Wiggy cage through its own
+    Surface Deform must not be adopted.
+    """
+    if objects is None:
+        scene = getattr(bpy.context, 'scene', None)
+        objects = scene.objects if scene is not None else bpy.data.objects
+    targets = set()
+    for ob in objects:
+        for m in ob.modifiers:
+            if (m.type == 'SURFACE_DEFORM' and m.target
+                    and m.name.startswith(GIGGLE_CAGE_BIND_PREFIX)):
+                targets.add(m.target)
+    return targets
+
+
 def is_giggle_owned_cage(obj, bind_targets=None):
     """True only for cages this add-on created or can prove it drives.
 
@@ -4793,22 +4815,25 @@ def is_giggle_owned_cage(obj, bind_targets=None):
     """
     if not obj or obj.type != 'MESH':
         return False
+    # The proxy marker has to win, because builds before this check stamped _giggle_cage onto
+    # clothing proxies. Those proxies carry _giggle_source_body and _giggle_vg_name too, are bound
+    # to garments through Surface Deform, and hold a copy of the body's Wiggy modifier, so a stale
+    # flag is enough to make one look like a cage. Clear the flag instead of trusting it.
+    if obj.get('_giggle_proxy'):
+        if obj.get('_giggle_cage'):
+            del obj['_giggle_cage']
+        return False
     if obj.get('_giggle_cage'):
         return True
-    # Clothing proxies carry _giggle_source_body and _giggle_vg_name too, are bound to garments
-    # through Surface Deform, and hold a copy of the body's Wiggy modifier. Without this check
-    # attaching clothes would turn every proxy into a simulation cage.
-    if obj.get('_giggle_proxy'):
-        return False
     # 1.2 and 2.0.0 cages always store the source body and vertex group; adopt them once.
     if obj.get('_giggle_source_body') and obj.get('_giggle_vg_name'):
         obj['_giggle_cage'] = True
         return True
     # Cages written before 1.2 carry no metadata at all. The only structural proof is that a body
-    # mesh is bound to them through Surface Deform, which is how Giggle drives a cage. This stays
-    # a per-session test: it is not proof enough to write a permanent ownership flag.
+    # mesh is bound to them through a Surface Deform modifier Giggle named. This stays a
+    # per-session test: it is not proof enough to write a permanent ownership flag.
     if bind_targets is None:
-        bind_targets = get_surface_deform_targets()
+        bind_targets = get_giggle_cage_bind_targets()
     return obj in bind_targets and any(
         m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
         for m in obj.modifiers)
@@ -4819,7 +4844,7 @@ def get_giggle_simulation_objects(context, obj=None):
     sim_objs = []
     scene = getattr(context, 'scene', None)
     objects = scene.objects if scene is not None else bpy.data.objects
-    bind_targets = get_surface_deform_targets(objects)
+    bind_targets = get_giggle_cage_bind_targets(objects)
     for o in objects:
         if not is_giggle_owned_cage(o, bind_targets):
             continue
@@ -5009,9 +5034,13 @@ def create_project_backup(keep=BACKUP_KEEP, dirty=None):
             key=os.path.getmtime, reverse=True)
 
         if dirty is None:
-            # UI sessions set this when the .blend has unsaved edits. Background sessions never
-            # do, so treat a missing flag as "there may be unsaved work".
+            # UI sessions set this when the .blend has unsaved edits. Background sessions cannot
+            # be trusted with it: the flag stays False after adding or moving objects, so a copy
+            # of the file on disk can be stale. Default to the live session instead - one extra
+            # save is cheaper than a backup that does not contain the work being protected.
             dirty = bool(getattr(bpy.data, 'is_dirty', True))
+            if not dirty and getattr(bpy.app, 'background', False):
+                dirty = True
         src_stat = os.stat(filepath)
         unchanged = (not dirty and bool(existing)
                      and os.path.getsize(existing[0]) == src_stat.st_size
@@ -5094,20 +5123,24 @@ def snapshot_disk_cache(cage_obj, keep=CACHE_BACKUP_KEEP):
     stamp = time.strftime("%Y%m%d_%H%M%S")
     for source in dirs:
         name = os.path.basename(os.path.normpath(source)) or "cache"
-        target = os.path.join(backup_root, f"{name}.cache.{stamp}")
+        # Two caches can share a basename (`/a/giggle_cache` and `/b/giggle_cache`). Pruning by
+        # name alone made one snapshot delete the other, so the full path is part of the label.
+        digest = hashlib.sha1(
+            os.path.normcase(os.path.abspath(source)).encode("utf-8")).hexdigest()[:8]
+        label = f"{name}.{digest}.cache."
+        target = os.path.join(backup_root, f"{label}{stamp}")
         counter = 1
         while os.path.exists(target):
-            target = os.path.join(backup_root, f"{name}.cache.{stamp}_{counter}")
+            target = os.path.join(backup_root, f"{label}{stamp}_{counter}")
             counter += 1
         try:
             shutil.copytree(source, target)
         except Exception as e:
             return False, f"Could not snapshot the external cache at {source}: {e}"
 
-        prefix = f"{name}.cache."
         snapshots = sorted(
             (os.path.join(backup_root, entry) for entry in os.listdir(backup_root)
-             if entry.startswith(prefix)),
+             if entry.startswith(label)),
             key=os.path.getmtime, reverse=True)
         for old in snapshots[keep:]:
             try:
@@ -7894,7 +7927,7 @@ def render_pre_cache_check(scene):
             return
         outdated = []
         unbaked = []
-        bind_targets = get_surface_deform_targets(scene.objects)
+        bind_targets = get_giggle_cage_bind_targets(scene.objects)
         for o in scene.objects:
             if is_giggle_owned_cage(o, bind_targets):
                 st, reason = check_cage_validity(o, bpy.context)

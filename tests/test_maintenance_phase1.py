@@ -364,7 +364,7 @@ def test_ownership():
     })
     garment = bpy.data.objects.new("Garment", bpy.data.meshes.new("Garment"))
     scene.collection.objects.link(garment)
-    garment.modifiers.new("Giggle_Cage_SurfaceDeform", 'SURFACE_DEFORM').target = proxy
+    garment.modifiers.new("Giggle_SurfaceDeform", 'SURFACE_DEFORM').target = proxy
 
     found = g.get_giggle_simulation_objects(ctx)
     check("a clothing proxy is not claimed as a cage", proxy not in found)
@@ -373,7 +373,45 @@ def test_ownership():
     # The garment itself is not a cage either, whatever it is bound to.
     check("a garment bound to a proxy is not claimed", garment not in found)
 
-    for ob in (foreign, owned, legacy, in_collection, proxy, garment):
+    # Builds before the proxy check stamped _giggle_cage on proxies. The proxy marker has to win,
+    # or those files keep baking their clothing proxies forever.
+    stale_proxy = mesh_with_wiggy("Stale_Proxy_Target", {
+        "_giggle_source_body": "Body",
+        "_giggle_vg_name": "VG",
+        "_giggle_proxy": True,
+        "_giggle_cage": True,
+    })
+    stale_garment = bpy.data.objects.new("Stale_Garment", bpy.data.meshes.new("Stale_Garment"))
+    scene.collection.objects.link(stale_garment)
+    stale_garment.modifiers.new("Giggle_SurfaceDeform", 'SURFACE_DEFORM').target = stale_proxy
+
+    found = g.get_giggle_simulation_objects(ctx)
+    check("a proxy already stamped as a cage is still rejected", stale_proxy not in found)
+    check("the stale cage flag is removed from the proxy", not stale_proxy.get('_giggle_cage'),
+          stale_proxy.get('_giggle_cage'))
+
+    # A pre-1.2 cage has no metadata, so the bind is the only proof. It has to be a Giggle bind:
+    # another add-on driving its own Wiggy cage through its own Surface Deform must be left alone.
+    def binder(name, target, modifier_name):
+        ob = bpy.data.objects.new(name, bpy.data.meshes.new(name))
+        scene.collection.objects.link(ob)
+        ob.modifiers.new(modifier_name, 'SURFACE_DEFORM').target = target
+        return ob
+
+    foreign_bound = mesh_with_wiggy("Other_Addon_Cage")
+    foreign_binder = binder("Other_Addon_Body", foreign_bound, "MyAddon_SurfaceDeform")
+
+    giggle_bound = mesh_with_wiggy("Giggle_Bound_Cage")
+    giggle_binder = binder("Giggle_Bound_Body", giggle_bound, "Giggle_Cage_SurfaceDeform")
+
+    found = g.get_giggle_simulation_objects(ctx)
+    check("a foreign Wiggy cage bound by another add-on is not claimed",
+          foreign_bound not in found)
+    check("a legacy cage bound by a Giggle_Cage_ modifier is claimed",
+          giggle_bound in found, [o.name for o in found])
+
+    for ob in (foreign, owned, legacy, in_collection, proxy, garment, stale_proxy, stale_garment,
+               foreign_bound, foreign_binder, giggle_bound, giggle_binder):
         bpy.data.objects.remove(ob, do_unlink=True)
     bpy.data.collections.remove(collection)
 
@@ -469,10 +507,22 @@ def test_backup_policy():
     blend = os.path.join(tmpdir, "backup_case.blend")
     bpy.ops.wm.save_as_mainfile(filepath=blend)
 
-    first = g.create_project_backup()
-    second = g.create_project_backup()
+    first = g.create_project_backup(dirty=False)
+    second = g.create_project_backup(dirty=False)
     check("backup is created", bool(first) and os.path.exists(first), first)
-    check("unchanged file is not copied twice", first == second, f"{first} vs {second}")
+    check("an explicitly clean file is not copied twice", first == second, f"{first} vs {second}")
+
+    # The default is conservative in a background session because bpy.data.is_dirty cannot be
+    # trusted there, so an automatic backup must reflect the live session rather than the file.
+    auto_first = g.create_project_backup()
+    bpy.context.scene["giggle_bg_marker"] = "background-edit"
+    auto_second = g.create_project_backup()
+    check("a background backup does not reuse the saved file", auto_first != auto_second,
+          f"{auto_first} vs {auto_second}")
+    bpy.ops.wm.open_mainfile(filepath=auto_second)
+    check("the background backup holds the live session",
+          bpy.context.scene.get("giggle_bg_marker") == "background-edit")
+    bpy.ops.wm.open_mainfile(filepath=blend)
 
     backup_dir = os.path.join(tmpdir, "giggle_backup")
     for i in range(4):
@@ -486,10 +536,10 @@ def test_backup_policy():
     check("old backups are pruned", len(kept) <= g.BACKUP_KEEP, kept)
     check("newest backup is kept", os.path.basename(newest) in kept, kept)
 
-    # Unsaved edits must be in the backup, not just the copy of the file on disk.
-    # bpy.data.is_dirty is never True in a background session (measured: it stays False after
-    # adding objects, moving them, or writing custom properties), so the flag is passed in
-    # explicitly. The GUI path reads the same flag from bpy.data.is_dirty.
+    # Unsaved edits must be in the backup, not just a copy of the file on disk. `dirty` is passed
+    # explicitly because bpy.data.is_dirty is unreliable headless: it is True for this file only
+    # because the POC scene opens dirty, and it stayed False after adding and moving objects in an
+    # earlier measurement. The GUI path reads the same flag from bpy.data.is_dirty.
     bpy.context.scene["giggle_test_marker"] = "dirty-session"
     dirty_backup = g.create_project_backup(dirty=True)
     check("unsaved edits trigger a new backup", dirty_backup != newest, dirty_backup)
@@ -549,7 +599,8 @@ def test_disk_cache_snapshot():
           copied)
 
     # Age the snapshot so pruning has something to remove.
-    stale = os.path.join(backup_root, "giggle_cache.cache.20000101_000000")
+    label = snapshots[0].split(".cache.")[0] + ".cache."
+    stale = os.path.join(backup_root, f"{label}20000101_000000")
     os.makedirs(stale, exist_ok=True)
     with open(os.path.join(stale, "frame.bin"), "wb") as handle:
         handle.write(b"stale")
@@ -579,6 +630,42 @@ def test_disk_cache_snapshot():
     missing = _FakeMod("Wiggy 0.1", 'DISK', os.path.join(tmpdir, "never_baked"), blocks=0)
     ok, message = g.snapshot_disk_cache(_FakeCage([missing]))
     check("a cage with no disk cache needs no snapshot", ok and message == "", f"{ok} {message}")
+
+
+def test_snapshots_with_the_same_basename():
+    """Two caches both called `giggle_cache` must not prune each other."""
+    tmpdir = tempfile.mkdtemp(prefix="giggle_same_name_")
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "same_name.blend"))
+
+    first = os.path.join(tmpdir, "character_a", "giggle_cache")
+    second = os.path.join(tmpdir, "character_b", "giggle_cache")
+    for directory, payload in ((first, b"character-a"), (second, b"character-b")):
+        os.makedirs(directory)
+        with open(os.path.join(directory, "frame.bin"), "wb") as handle:
+            handle.write(payload)
+
+    cage = _FakeCage([_FakeMod("Wiggy 0.1", 'DISK', first, blocks=2),
+                      _FakeMod("Wiggy 0.1", 'DISK', second, blocks=2)])
+
+    ok, message = g.snapshot_disk_cache(cage)
+    check("both cache directories are snapshotted", ok, message)
+
+    backup_root = os.path.join(tmpdir, "giggle_backup")
+    snapshots = [n for n in os.listdir(backup_root) if ".cache." in n]
+    check("one snapshot per directory is kept", len(snapshots) == 2, snapshots)
+
+    payloads = set()
+    for name in snapshots:
+        path = os.path.join(backup_root, name, "frame.bin")
+        if os.path.exists(path):
+            payloads.add(open(path, "rb").read())
+    check("each snapshot keeps its own cache contents",
+          payloads == {b"character-a", b"character-b"}, payloads)
+
+    # A second pass must still leave both, not prune one in favour of the other.
+    ok, message = g.snapshot_disk_cache(cage)
+    snapshots = [n for n in os.listdir(backup_root) if ".cache." in n]
+    check("a second pass keeps both directories", ok and len(snapshots) == 2, snapshots)
 
 
 def test_prepare_cache_replacement():
@@ -649,6 +736,7 @@ def main():
         print("SKIP scene tests: open poc_cage_xpbd_kasumi.blend to run them")
     test_backup_policy()
     test_disk_cache_snapshot()
+    test_snapshots_with_the_same_basename()
     test_prepare_cache_replacement()
 
     print(f"RESULT {CHECKS - len(FAILURES)}/{CHECKS} checks passed")
