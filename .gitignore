@@ -10,3 +10,9 @@ JitterArmatureModel.blend
 *.crash.txt
 __pycache__/
 *.pyc
+
+# Test logs written by tests/run_tests.ps1
+artifacts/
+
+# Review packets are rebuilt from git on demand
+scratch/reviews/*.diff
