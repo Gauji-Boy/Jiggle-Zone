@@ -1,0 +1,10 @@
+﻿+def get_surface_deform_targets(objects=None):
++def is_giggle_owned_cage(obj, bind_targets=None):
++def get_requested_bake_config(context):
+-def create_project_backup():
++def create_project_backup(keep=BACKUP_KEEP, dirty=None):
+-def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, f_end):
++def cage_has_cache(cage_obj):
++def backup_before_replacing_cache(targets):
++def mark_bake_failure(cage_obj, message, had_cache):
++def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, f_end):
