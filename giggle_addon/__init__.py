@@ -3193,6 +3193,11 @@ class GiggleSceneSettings(PropertyGroup):
         ],
         default='WIGGY'
     )
+    new_zone_cage_mode: BoolProperty(
+        name="Cage XPBD",
+        description="Build a lightweight proxy cage for new zones so physics runs on a few hundred vertices instead of the whole mesh. Uncheck to create a Full-Mesh zone (advanced, much slower on dense meshes)",
+        default=True
+    )
     preset_mode: EnumProperty(
         name="Physics Mode",
         description="Choose restrained natural motion or more expressive secondary motion",
@@ -3721,6 +3726,36 @@ class GIGGLE_OT_add_zone(Operator):
             sync_settings_from_zone_mod(settings, mod)
             obj["_giggle_last_synced_mod"] = mod.name
 
+        # New zones are accelerated to Cage XPBD by default (2.1). A failed bind
+        # must not cost the user their zone: keep it full-mesh, remember the
+        # reason, and let the zone card explain and offer the choice.
+        if getattr(settings, "new_zone_cage_mode", True) and not is_zone_in_cage_mode(obj, mod):
+            cage_error = ""
+            try:
+                with context.temp_override(
+                    active_object=obj,
+                    object=obj,
+                    selected_objects=[obj],
+                    selected_editable_objects=[obj],
+                ):
+                    bpy.ops.giggle.generate_cage('EXEC_DEFAULT')
+            except Exception as exc:
+                cage_error = str(exc)
+
+            if is_zone_in_cage_mode(obj, mod):
+                set_zone_cage_error(mod, "")
+            else:
+                # generate_cage() already stored the real cause on failure. Keep it:
+                # its message is more specific than anything we can rebuild here.
+                reason = (get_zone_cage_error(mod) or cage_error
+                          or "Surface Deform could not bind a proxy cage to this region")
+                set_zone_cage_error(mod, reason)
+                self.report(
+                    {'WARNING'},
+                    f"Zone '{mod.name}' was created as Full-Mesh XPBD because cage binding failed. "
+                    "See the zone card for details."
+                )
+
         try:
             obj.update_tag(refresh={'DATA'})
         except Exception:
@@ -3787,6 +3822,65 @@ def get_zone_sd_modifier(obj, vg_name):
         return None
     return obj.modifiers.get(f"Giggle_Cage_SD_{vg_name}")
 
+def clean_cage_error_message(message):
+    """Normalize an operator/exception message into one readable line."""
+    text = str(message or "").replace("\r", " ").replace("\n", " ").strip()
+    for prefix in ("Error:", "RuntimeError:", "error:"):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+    text = " ".join(text.split())
+    while text.endswith((".", " ")):
+        text = text[:-1]
+    return text or "Cage proxy could not be created for this region"
+
+def set_zone_cage_error(mod, message):
+    """Remember (or clear) why a zone could not be accelerated with a cage."""
+    if not mod:
+        return
+    obj = getattr(mod, "id_data", None) or bpy.context.active_object
+    if not obj:
+        return
+    key = f"_giggle_{mod.name}_cage_error"
+    try:
+        if message:
+            obj[key] = clean_cage_error_message(message)
+        else:
+            obj.pop(key, None)
+    except Exception:
+        pass
+
+def get_zone_cage_error(mod):
+    """Return the stored cage failure reason for a zone, or an empty string."""
+    if not mod:
+        return ""
+    obj = getattr(mod, "id_data", None) or bpy.context.active_object
+    if not obj:
+        return ""
+    try:
+        return str(obj.get(f"_giggle_{mod.name}_cage_error", "") or "")
+    except Exception:
+        return ""
+
+def wrap_zone_error(message, width=46, max_lines=3):
+    """Split a stored cage error into panel-friendly lines."""
+    words = str(message or "").split()
+    lines = []
+    line = ""
+    for word in words:
+        candidate = f"{line} {word}".strip()
+        if len(candidate) <= width:
+            line = candidate
+        else:
+            if line:
+                lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = (lines[-1][: width - 1] + "…") if len(lines[-1]) >= width else (lines[-1] + "…")
+    return lines or ["Cage binding failed for this region"]
+
 def is_zone_in_cage_mode(obj, mod):
     if not obj or not mod:
         return False
@@ -3799,6 +3893,131 @@ def is_zone_in_cage_mode(obj, mod):
     cage = get_zone_cage_object(obj, vg_name)
     sd = get_zone_sd_modifier(obj, vg_name)
     return bool(cage and sd and getattr(sd, "is_bound", False))
+
+def zone_mode_label(obj, mod):
+    """Short 'Cage 483v' / 'Full 28,652v' label for a zone row. Never raises."""
+    try:
+        if is_zone_in_cage_mode(obj, mod):
+            vg_name = get_mod_socket_attribute_name(mod, 'Socket_2')
+            cage = get_zone_cage_object(obj, vg_name) if vg_name else None
+            return f"Cage {len(cage.data.vertices):,}v" if cage else "Cage"
+        return f"Full {len(obj.data.vertices):,}v"
+    except Exception:
+        return "Full-Mesh"
+
+
+def sanitize_cage_manifold(bm, max_iterations=10):
+    """
+    Sanitize non-manifold and degenerate geometry on proxy cage BMesh.
+    Guarantees that no edge connects to > 2 polygons, no wire edges exist,
+    and no isolated vertices remain, satisfying Blender Surface Deform binding.
+    Raises RuntimeError if cleanup fails to converge within max_iterations.
+    Returns comprehensive diagnostic metrics including area, faces, boundary edges,
+    and connected-component counts.
+    """
+    import bmesh
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    initial_v = len(bm.verts)
+    initial_e = len(bm.edges)
+    initial_f = len(bm.faces)
+    initial_boundary_e = len([e for e in bm.edges if len(e.link_faces) == 1])
+    initial_area = sum(f.calc_area() for f in bm.faces)
+
+    def _count_components(b_mesh):
+        visited = set()
+        comps = 0
+        for f in b_mesh.faces:
+            if f not in visited:
+                comps += 1
+                queue = [f]
+                visited.add(f)
+                while queue:
+                    curr = queue.pop()
+                    for e in curr.edges:
+                        for lf in e.link_faces:
+                            if lf not in visited:
+                                visited.add(lf)
+                                queue.append(lf)
+        return comps
+
+    initial_components = _count_components(bm)
+
+    total_nm_edges_removed = 0
+    total_wire_edges_removed = 0
+    total_loose_verts_removed = 0
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+        bm.edges.ensure_lookup_table()
+        bad_nm = [e for e in bm.edges if len(e.link_faces) > 2]
+        bad_wire = [e for e in bm.edges if len(e.link_faces) == 0]
+
+        if not bad_nm and not bad_wire:
+            break
+
+        total_nm_edges_removed += len(bad_nm)
+        total_wire_edges_removed += len(bad_wire)
+        bmesh.ops.delete(bm, geom=bad_nm + bad_wire, context='EDGES')
+
+        bm.verts.ensure_lookup_table()
+        loose = [v for v in bm.verts if len(v.link_edges) == 0]
+        if loose:
+            total_loose_verts_removed += len(loose)
+            bmesh.ops.delete(bm, geom=loose, context='VERTS')
+
+    bm.verts.ensure_lookup_table()
+    loose = [v for v in bm.verts if len(v.link_edges) == 0]
+    if loose:
+        total_loose_verts_removed += len(loose)
+        bmesh.ops.delete(bm, geom=loose, context='VERTS')
+
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    # Mandatory Convergence Check: verify zero bad edges remain
+    remaining_nm = [e for e in bm.edges if len(e.link_faces) > 2]
+    remaining_wire = [e for e in bm.edges if len(e.link_faces) == 0]
+    if remaining_nm or remaining_wire:
+        raise RuntimeError(
+            f"Cage manifold sanitizer failed to converge within {max_iterations} iterations "
+            f"({len(remaining_nm)} non-manifold and {len(remaining_wire)} wire edges remain). "
+            f"Aborting cage generation."
+        )
+
+    final_v = len(bm.verts)
+    final_e = len(bm.edges)
+    final_f = len(bm.faces)
+    final_boundary_e = len([e for e in bm.edges if len(e.link_faces) == 1])
+    final_components = _count_components(bm)
+    final_area = sum(f.calc_area() for f in bm.faces)
+
+    faces_removed = initial_f - final_f
+    area_removed = initial_area - final_area
+    area_loss_pct = (area_removed / initial_area * 100.0) if initial_area > 0.0 else 0.0
+    face_loss_pct = (faces_removed / initial_f * 100.0) if initial_f > 0 else 0.0
+
+    return {
+        "converged": True,
+        "iterations": iteration,
+        "initial_v": initial_v, "initial_e": initial_e, "initial_f": initial_f,
+        "initial_boundary_e": initial_boundary_e, "initial_components": initial_components,
+        "initial_area": initial_area,
+        "final_v": final_v, "final_e": final_e, "final_f": final_f,
+        "final_boundary_e": final_boundary_e, "final_components": final_components,
+        "final_area": final_area,
+        "nm_edges_removed": total_nm_edges_removed,
+        "wire_edges_removed": total_wire_edges_removed,
+        "loose_verts_removed": total_loose_verts_removed,
+        "faces_removed": faces_removed,
+        "area_removed": area_removed,
+        "face_loss_pct": face_loss_pct,
+        "area_loss_pct": area_loss_pct,
+    }
 
 
 class GIGGLE_OT_generate_cage(Operator):
@@ -3848,6 +4067,10 @@ class GIGGLE_OT_generate_cage(Operator):
         # 1. State capture & Rest Pose isolation
         orig_mode = obj.mode
         orig_frame = scene.frame_current
+        orig_active = context.view_layer.objects.active
+        orig_selected = [o for o in context.selected_objects if o]
+        orig_src_mod_viewport = src_mod.show_viewport
+        orig_src_mod_render = src_mod.show_render
         if orig_mode != 'OBJECT':
             try:
                 bpy.ops.object.mode_set(mode='OBJECT')
@@ -3903,36 +4126,50 @@ class GIGGLE_OT_generate_cage(Operator):
 
             # 3. Dilation and Edge cleanup in BMesh
             bm = bmesh.new()
-            bm.from_mesh(cage_obj.data)
-            dvert_lay = bm.verts.layers.deform.active
+            try:
+                bm.from_mesh(cage_obj.data)
+                dvert_lay = bm.verts.layers.deform.active
 
-            verts_to_keep = set()
-            for v in bm.verts:
-                dvert = v[dvert_lay] if dvert_lay else None
-                w = dvert.get(vg_idx, 0.0) if dvert else 0.0
-                if w >= 0.01:
-                    verts_to_keep.add(v)
+                verts_to_keep = set()
+                for v in bm.verts:
+                    dvert = v[dvert_lay] if dvert_lay else None
+                    w = dvert.get(vg_idx, 0.0) if dvert else 0.0
+                    if w >= 0.01:
+                        verts_to_keep.add(v)
 
-            dilated = set(verts_to_keep)
-            for _ in range(self.dilation_rings):
-                ring = set(dilated)
-                for v in dilated:
-                    for e in v.link_edges:
-                        ring.add(e.other_vert(v))
-                dilated = ring
+                dilated = set(verts_to_keep)
+                for _ in range(self.dilation_rings):
+                    ring = set(dilated)
+                    for v in dilated:
+                        for e in v.link_edges:
+                            ring.add(e.other_vert(v))
+                    dilated = ring
 
-            verts_to_delete = [v for v in bm.verts if v not in dilated]
-            bmesh.ops.delete(bm, geom=verts_to_delete, context='VERTS')
+                verts_to_delete = [v for v in bm.verts if v not in dilated]
+                bmesh.ops.delete(bm, geom=verts_to_delete, context='VERTS')
 
-            bad_edges = [e for e in bm.edges if len(e.link_faces) > 2 or e.is_wire]
-            if bad_edges:
-                bmesh.ops.delete(bm, geom=bad_edges, context='EDGES')
+                bad_edges = [e for e in bm.edges if len(e.link_faces) > 2 or e.is_wire]
+                if bad_edges:
+                    bmesh.ops.delete(bm, geom=bad_edges, context='EDGES')
 
-            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
-            bmesh.ops.triangulate(bm, faces=bm.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
-            bm.to_mesh(cage_obj.data)
-            bm.free()
-            cage_obj.data.update()
+                bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
+                bmesh.ops.triangulate(bm, faces=bm.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
+
+                # Stage C: Manifold Sanitizer Pass 1
+                diag_c = sanitize_cage_manifold(bm)
+                if diag_c["area_loss_pct"] > 20.0 or diag_c["face_loss_pct"] > 25.0:
+                    raise RuntimeError(
+                        f"Manifold sanitization removed excessive geometry in Stage C "
+                        f"({diag_c['area_loss_pct']:.1f}% area, {diag_c['face_loss_pct']:.1f}% faces). "
+                        "Aborting cage generation to preserve shape."
+                    )
+                if diag_c["final_components"] > diag_c["initial_components"] + 2:
+                    raise RuntimeError("Manifold sanitization fragmented cage topology in Stage C.")
+
+                bm.to_mesh(cage_obj.data)
+                cage_obj.data.update()
+            finally:
+                bm.free()
 
             # 4. Decimate to target_verts
             curr_v = len(cage_obj.data.vertices)
@@ -3942,13 +4179,28 @@ class GIGGLE_OT_generate_cage(Operator):
                 with context.temp_override(active_object=cage_obj, object=cage_obj):
                     bpy.ops.object.modifier_apply(modifier=dec.name)
 
-            # Re-triangulate after decimation
+            # Stage E: Re-triangulate and Manifold Sanitizer Pass 2
             bm2 = bmesh.new()
-            bm2.from_mesh(cage_obj.data)
-            bmesh.ops.triangulate(bm2, faces=bm2.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
-            bm2.to_mesh(cage_obj.data)
-            bm2.free()
-            cage_obj.data.update()
+            try:
+                bm2.from_mesh(cage_obj.data)
+                bmesh.ops.triangulate(bm2, faces=bm2.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
+                diag_e = sanitize_cage_manifold(bm2)
+                if diag_e["area_loss_pct"] > 20.0 or diag_e["face_loss_pct"] > 25.0:
+                    raise RuntimeError(
+                        f"Manifold sanitization removed excessive geometry post-decimation "
+                        f"({diag_e['area_loss_pct']:.1f}% area, {diag_e['face_loss_pct']:.1f}% faces). "
+                        "Aborting cage generation to preserve shape."
+                    )
+
+                if len(bm2.faces) < 4 or len(bm2.verts) < 10:
+                    raise RuntimeError("Sanitized simulation cage has insufficient geometric density.")
+                if diag_e["final_components"] > diag_e["initial_components"] + 2:
+                    raise RuntimeError("Manifold sanitization fragmented cage topology post-decimation.")
+
+                bm2.to_mesh(cage_obj.data)
+                cage_obj.data.update()
+            finally:
+                bm2.free()
 
             # 5. Add Armature
             if arm_obj:
@@ -4025,6 +4277,7 @@ class GIGGLE_OT_generate_cage(Operator):
             # 9. Mute body full-mesh solver
             src_mod.show_viewport = False
             src_mod.show_render = False
+            set_zone_cage_error(src_mod, "")
 
             # 10. Auto-route assigned clothing to the cage
             clothing_count = 0
@@ -4055,11 +4308,28 @@ class GIGGLE_OT_generate_cage(Operator):
             body_sd_cleanup = obj.modifiers.get(f"Giggle_Cage_SD_{vg_name}")
             if body_sd_cleanup:
                 obj.modifiers.remove(body_sd_cleanup)
-            src_mod.show_viewport = True
-            src_mod.show_render = True
+            src_mod.show_viewport = orig_src_mod_viewport
+            src_mod.show_render = orig_src_mod_render
+            set_zone_cage_error(src_mod, str(exc))
             if arm_obj:
                 arm_obj.data.pose_position = orig_pose_pos
             scene.frame_set(orig_frame)
+            if orig_active and orig_active.name in bpy.data.objects:
+                try:
+                    context.view_layer.objects.active = orig_active
+                except Exception:
+                    pass
+            for o in context.selected_objects:
+                try:
+                    o.select_set(False)
+                except Exception:
+                    pass
+            for o in orig_selected:
+                if o and o.name in bpy.data.objects:
+                    try:
+                        o.select_set(True)
+                    except Exception:
+                        pass
             if orig_mode != 'OBJECT':
                 try:
                     bpy.ops.object.mode_set(mode=orig_mode)
@@ -4122,6 +4392,7 @@ class GIGGLE_OT_toggle_simulation_mode(Operator):
                 bpy.data.objects.remove(cage, do_unlink=True)
             src_mod.show_viewport = True
             src_mod.show_render = True
+            set_zone_cage_error(src_mod, "")
             self.report({'INFO'}, f"Switched '{src_mod.name}' to Full-Mesh XPBD (Legacy)")
         else:
             # Accelerate with Cage
@@ -4146,6 +4417,38 @@ class GIGGLE_OT_rebuild_cage(Operator):
 
     def execute(self, context):
         return bpy.ops.giggle.generate_cage()
+
+
+class GIGGLE_OT_keep_full_mesh(Operator):
+    """Accept Full-Mesh XPBD for this zone and hide the cage failure notice"""
+    bl_idname = "giggle.keep_full_mesh"
+    bl_label = "Keep Full-Mesh XPBD"
+    bl_description = "Keep this zone on Full-Mesh XPBD and dismiss the cage binding notice"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        settings = getattr(context.scene, 'giggle_settings', None)
+        mods = get_giggle_modifiers(obj)
+        return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
+
+    def execute(self, context):
+        obj = context.active_object
+        settings = context.scene.giggle_settings
+        mods = get_giggle_modifiers(obj)
+        idx = settings.active_zone_index
+        if not (0 <= idx < len(mods)):
+            return {'CANCELLED'}
+        mod = mods[idx]
+        set_zone_cage_error(mod, "")
+        mod.show_viewport = True
+        mod.show_render = True
+        self.report(
+            {'INFO'},
+            f"'{mod.name}' stays on Full-Mesh XPBD. It simulates every vertex of this mesh."
+        )
+        return {'FINISHED'}
 
 
 class GIGGLE_OT_remove_zone(Operator):
@@ -4174,6 +4477,7 @@ class GIGGLE_OT_remove_zone(Operator):
             obj.pop(f"_giggle_{name}_gender", None)
             obj.pop(f"_giggle_{name}_customized", None)
             obj.pop(f"_giggle_{name}_support_base_json", None)
+            obj.pop(f"_giggle_{name}_cage_error", None)
             obj.pop("_giggle_last_synced_mod", None)
             # Clean up associated Cage XPBD proxy and Surface Deform modifier if present
             s_in = getattr(getattr(target_mod, "properties", None), "inputs", None)
@@ -4646,6 +4950,98 @@ def get_driving_armature(cage_or_mesh):
         if o.type == 'ARMATURE' and o.animation_data and o.animation_data.action:
             return o
     return None
+
+
+def get_binding_armatures(objects):
+    """Armatures that deform these meshes (armature modifiers and armature parenting)."""
+    found = []
+    seen = set()
+    for obj in objects:
+        if not obj or getattr(obj, "type", "") != 'MESH':
+            continue
+        candidates = [m.object for m in getattr(obj, "modifiers", [])
+                      if m.type == 'ARMATURE' and m.object]
+        parent = getattr(obj, "parent", None)
+        if parent is not None and getattr(parent, "type", "") == 'ARMATURE':
+            candidates.append(parent)
+        for arm in candidates:
+            if arm.name not in seen:
+                seen.add(arm.name)
+                found.append(arm)
+    return found
+
+
+def enter_rest_pose(armatures):
+    """Switch the armature datablocks behind these objects to REST.
+
+    Returns (switched, failures):
+      switched - [(datablock, original_pose_position)] actually left in REST
+      failures - [(armature_name, datablock_name, error_text)]
+    Each datablock is switched exactly once, even when several armature
+    objects share it. A datablock that refuses REST is reported, never ignored.
+    """
+    failures = []
+    wanted = []
+    seen = set()
+    for arm in armatures:
+        arm_name = getattr(arm, "name", "?")
+        try:
+            data = getattr(arm, "data", None)
+            if data is None or not hasattr(data, "pose_position"):
+                continue
+            key = data.as_pointer()
+            if key in seen:
+                continue
+            seen.add(key)
+            wanted.append((arm_name, data))
+        except Exception as exc:
+            failures.append((arm_name, "?", str(exc)))
+
+    switched = []
+    for arm_name, data in wanted:
+        data_name = getattr(data, "name", "?")
+        try:
+            original = data.pose_position
+            data.pose_position = 'REST'
+        except Exception as exc:
+            failures.append((arm_name, data_name, str(exc)))
+            continue
+        if data.pose_position != 'REST':
+            failures.append((arm_name, data_name, "armature refused Rest Pose"))
+            continue
+        switched.append((data, original))
+    return switched, failures
+
+
+def unrested_armatures(switched):
+    """Armature datablocks that did not stay in REST once the depsgraph ran."""
+    bad = []
+    for data, _original in switched or ():
+        try:
+            if data.pose_position != 'REST':
+                bad.append(getattr(data, "name", "armature data"))
+        except Exception:
+            bad.append(getattr(data, "name", "armature data"))
+    return bad
+
+
+def restore_pose_position(saved):
+    """Restore pose_position values exactly.
+
+    Returns [(datablock_name, error_text)] for every datablock that could not
+    be restored, so the caller can report it instead of binding against a shape
+    nobody asked for.
+    """
+    failures = []
+    for data, original in saved or ():
+        name = getattr(data, "name", "armature data")
+        try:
+            data.pose_position = original
+            if data.pose_position != original:
+                failures.append((name, f"armature stayed in {data.pose_position}"))
+        except Exception as exc:
+            failures.append((name, str(exc)))
+    return failures
 
 
 def compute_animation_hash(arm_obj):
@@ -5887,6 +6283,11 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                 badge = get_zone_recipe_badge(m)
                 row.label(text=f"[{badge}]")
 
+                # Simulation mode + vertex cost, visible without selecting the zone
+                mode_cell = row.row(align=True)
+                mode_cell.scale_x = 0.9
+                mode_cell.label(text=zone_mode_label(obj, m))
+
                 eye_icon = 'HIDE_OFF' if m.show_viewport else 'HIDE_ON'
                 op_mute = row.operator("giggle.toggle_mute", text="", icon=eye_icon)
                 op_mute.mod_name = m.name
@@ -5901,6 +6302,7 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                 card = box.box()
                 
                 s_inputs = getattr(getattr(active_mod, "properties", None), "inputs", None)
+                s2 = None
                 if active_mod.node_group and active_mod.node_group.name == 'Wiggy 0.1' and s_inputs and hasattr(s_inputs, "Socket_2"):
                     s2 = s_inputs.Socket_2
                     attr_val = getattr(s2, "attribute_name", "")
@@ -5932,6 +6334,20 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                     v_count = len(obj.data.vertices) if hasattr(obj.data, "vertices") else 0
                     row_f.label(text=f"[{v_count:,} verts]")
                     mode_box.operator("giggle.generate_cage", text="Accelerate with Cage XPBD (5-8x Faster)", icon='AUTO')
+
+                    # Explain a failed automatic cage instead of leaving the user
+                    # with a silently expensive zone.
+                    cage_error = get_zone_cage_error(active_mod)
+                    if cage_error:
+                        err_box = card.box()
+                        err_box.alert = True
+                        err_box.label(text="Cage binding failed for this region", icon='ERROR')
+                        for line_txt in wrap_zone_error(cage_error):
+                            err_box.label(text=line_txt)
+                        err_box.label(text=f"Simulating all {v_count:,} vertices at once.")
+                        row_err = err_box.row(align=True)
+                        row_err.operator("giggle.generate_cage", text="Retry Cage", icon='FILE_REFRESH')
+                        row_err.operator("giggle.keep_full_mesh", text="Keep Full-Mesh", icon='CHECKMARK')
 
                 row_rem = card.row(align=True)
                 row_rem.operator("giggle.remove_zone", text=f"Remove Zone '{active_mod.name}'", icon='X')
@@ -5994,8 +6410,13 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
             add_box.prop(settings, "new_zone_preset", text="Preset")
             add_box.label(text="Engine: Wiggy XPBD", icon='PHYSICS')
             add_box.prop(settings, "new_zone_name", text="Custom Name (Optional)")
+            add_box.prop(settings, "new_zone_cage_mode", text="Cage XPBD (fast, recommended)")
 
-            add_box.operator("giggle.add_zone", text="Add Jiggle Zone", icon='MOD_PHYSICS')
+            add_box.operator(
+                "giggle.add_zone",
+                text="Add Jiggle Zone (Cage XPBD)" if settings.new_zone_cage_mode else "Add Jiggle Zone (Full-Mesh)",
+                icon='MOD_PHYSICS'
+            )
 
 
 class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
@@ -6919,6 +7340,11 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
         orig_active = context.view_layer.objects.active
         orig_selected = [o for o in context.selected_objects if o]
 
+        # Only the armatures that really deform this body and these garments.
+        # Binding in POSE would capture the posed silhouette as the rest shape.
+        binding_armatures = get_binding_armatures([active_obj] + clothing_objs)
+        orig_pose_positions = []
+
         # Switch to OBJECT mode defensively if needed
         if orig_mode != 'OBJECT':
             try:
@@ -6945,10 +7371,35 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
             except Exception:
                 pass
 
+            # Bind against the neutral shape. Going to scene.frame_start does not
+            # guarantee a rest pose, so the driving armatures are isolated in REST
+            # for the whole bind and restored in finally. If a rig refuses REST we
+            # must not bind at all: that is the bug this correction exists for.
+            orig_pose_positions, rest_failures = enter_rest_pose(binding_armatures)
+            context.view_layer.update()
+
             # Bind strictly at scene.frame_start
             scene.frame_set(scene.frame_start)
             dg = context.evaluated_depsgraph_get()
             dg.update()
+
+            # A driven or keyframed pose_position snaps back to POSE during frame
+            # evaluation only, so REST has to be verified again right here.
+            if not rest_failures:
+                reverted = unrested_armatures(orig_pose_positions)
+                if reverted:
+                    rest_failures = [(name, name, "armature left Rest Pose during animation evaluation")
+                                     for name in reverted]
+            if rest_failures:
+                details = "; ".join(
+                    f"'{arm}'" + (f" ({data_name})" if data_name and data_name != arm else "")
+                    + f" could not enter Rest Pose: {error}"
+                    for arm, data_name, error in rest_failures
+                )
+                raise RuntimeError(
+                    f"Nothing was bound. {details}. "
+                    "Set the rig's Pose Position to REST and try again."
+                )
 
             # Process each zone group
             for (src_mod, vg_name), clothes_in_zone in zone_groups.items():
@@ -7227,6 +7678,22 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
             return {'CANCELLED'}
 
         finally:
+            # Never leave the user's rig in REST, whatever path we took.
+            restore_failures = restore_pose_position(orig_pose_positions)
+            if restore_failures:
+                detail = "; ".join(f"'{name}': {error}" for name, error in restore_failures)
+                message = (f"Some armatures could not be returned to their original pose ({detail}). "
+                           "Set their Pose Position back manually.")
+                print("[Giggle] " + message)
+                try:
+                    self.report({'ERROR'}, message)
+                except Exception:
+                    pass
+            if orig_pose_positions:
+                try:
+                    context.view_layer.update()
+                except Exception:
+                    pass
             scene.frame_set(orig_frame)
             if orig_active and orig_active.name in bpy.data.objects:
                 context.view_layer.objects.active = orig_active
@@ -7983,6 +8450,7 @@ classes = (
     GIGGLE_OT_generate_cage,
     GIGGLE_OT_toggle_simulation_mode,
     GIGGLE_OT_rebuild_cage,
+    GIGGLE_OT_keep_full_mesh,
     GIGGLE_OT_bake_all_cages,
     GIGGLE_OT_bake_selected_cage,
     GIGGLE_OT_rebake_all,
