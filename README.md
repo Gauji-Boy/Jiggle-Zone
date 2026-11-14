@@ -1,4 +1,4 @@
-# Giggle Soft Body Physics — 2.0.0
+# Giggle Soft Body Physics — 2.1.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 
@@ -23,7 +23,7 @@ A high-performance Blender character secondary motion and XPBD soft-body simulat
 4. Click **Add Jiggle Zone**.
 5. By default, **Cage XPBD** is generated to provide 5x-10x faster playback. You can toggle between Cage XPBD and Full-Mesh XPBD at any time.
 
-## Simulation Caching & Baking (v2.0.0)
+## Simulation Caching & Baking (v2.1.0)
 
 - **Instant Scrubbing**: Click **Bake All Zones** to bake simulation state to `PACKED` (stored inside `.blend`) or `DISK` storage for non-sequential, instantaneous viewport scrubbing.
 - **Dynamic Invalidation**: Changing physics parameters in the Giggle panel automatically flags the cache as `OUTDATED`. Click **Rebake All** to refresh.

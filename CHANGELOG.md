@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.0 — Cage XPBD workflow and reliable clothing attachment
+
+### Added
+- New jiggle zones generate **Cage XPBD** automatically by default, with the existing
+  Full-Mesh XPBD path retained as an explicit fallback and hero-shot option.
+- Cage generation now performs rest-pose isolation, zone-boundary dilation, decimation,
+  manifold sanitization, automated cage rigging, and Surface Deform binding.
+
+### Reliability
+- Failed cage binding preserves the zone and exposes explicit recovery actions: retry
+  cage generation or keep the zone on Full-Mesh XPBD.
+- Cage manifold sanitization removes non-manifold and loose geometry while preserving
+  the expected spatial envelope and reports its diagnostics.
+- Surface Deform binding and clothing attachment use transactional staging and rollback,
+  including the Rest Pose workflow, so failed rebinding does not destroy a working setup.
+- Clothing proxies are isolated in the hidden `Giggle_Proxies` collection and remain
+  protected from cage discovery and simulation-cache operations.
+
+### Compatibility and verification
+- Verified on Blender 5.2.2 LTS and Blender 5.3.0.
+- Existing Full-Mesh and Jiggle V2 projects remain supported; existing scenes are not
+  force-converted to cage mode.
+- This release continues to use the bundled Wiggy 0.1 asset. The Wiggy 0.2.0 port is
+  intentionally separate and is not included in 2.1.0.
+
+
 ## 2.0.0 — Cage-Accelerated XPBD & Simulation Cache Manager
 
 ### Milestone 1: Performance Foundation

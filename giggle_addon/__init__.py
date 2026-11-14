@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Giggle Soft Body Physics",
     "author": "VOZHD1122 & RoboDrozd / Giggle",
-    "version": (2, 0, 1),
+    "version": (2, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Sidebar > Giggle",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",

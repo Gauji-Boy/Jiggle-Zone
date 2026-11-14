@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "giggle_physics"
-version = "2.0.1"
+version = "2.1.0"
 name = "Giggle Soft Body Physics"
 tagline = "Interactive soft body jiggle physics and secondary motion for characters and objects"
 maintainer = "VOZHD1122 & RoboDrozd / Giggle"
