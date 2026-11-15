@@ -10,11 +10,22 @@
 - The package folder is `jiggle_zone/` and the release artifact is `jiggle-zone.zip`.
 
 ### Upgrading from Giggle 2.x
-- Uninstall **Giggle Soft Body Physics** before enabling Jiggle Zone. The id changed, so the
-  new add-on installs alongside the old one and both can be enabled at once otherwise.
-- Opening a 2.x scene migrates legacy `_giggle_*` markers to `_jiggle_*` and renames the
-  `Giggle_Proxies` collection. Legacy keys are kept, so the same file still opens with 2.1.
-- Keymaps and scripts that call `giggle.*` operators must be rebound to `jiggle.*`.
+- The extension id changed, so Blender treats this as a different add-on. Install Jiggle Zone
+  **before** removing **Giggle Soft Body Physics**, open each 2.x project once, save it, then
+  remove the old add-on.
+- Reason: Blender discards an unregistered PropertyGroup when a file loads, so the panel
+  settings (`scene.giggle_settings`: bake range, disk path, preset selection) are only copied
+  while 2.1 is still enabled. The stored values are not deleted from the file and remain
+  readable by 2.1.
+- Markers: `_giggle_*` keys are copied to `_jiggle_*` on first load. Legacy keys are kept, so
+  cage and bake links survive.
+- Collection: `Giggle_Proxies` becomes `Jiggle_Proxies`. A migrated file reopened in 2.1 will
+  not find the renamed collection, and proxies must be re-linked.
+- Operators: `giggle.*` is removed with no alias. Keymaps and scripts must be rebound to
+  `jiggle.*`.
+- Round trip: a 3.0 file still resolves cage markers and old panel settings when reopened in
+  2.1, but that is not a supported workflow.
+
 
 ### Behaviour
 - No simulation behaviour changes. This is the 2.1.0 engine under a new identity.

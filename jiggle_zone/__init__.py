@@ -2773,7 +2773,7 @@ def is_jiggle_modifier(mod):
     if mod.type != 'NODES' or not mod.node_group:
         return False
     return (mod.node_group.name in {'Wiggy 0.1', 'Jiggle', 'Jiggle + Deformation'} or
-            mod.name.startswith("Jiggle"))
+            is_jiggle_addon_name(mod.name))
 
 def get_jiggle_modifiers(obj):
     if not obj or obj.type != 'MESH':
@@ -3820,7 +3820,7 @@ def get_zone_cage_object(obj, vg_name):
 def get_zone_sd_modifier(obj, vg_name):
     if not obj or not vg_name:
         return None
-    return obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
+    return get_cage_sd_modifier(obj, vg_name)
 
 def clean_cage_error_message(message):
     """Normalize an operator/exception message into one readable line."""
@@ -4096,7 +4096,7 @@ class JIGGLE_OT_generate_cage(Operator):
         # Track for ACID Rollback
         created_objects = []
         created_meshes = []
-        old_sd = obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
+        old_sd = get_cage_sd_modifier(obj, vg_name)
         old_sd_state = None
         if old_sd:
             old_sd_state = (old_sd.target, old_sd.vertex_group, old_sd.show_viewport)
@@ -4283,7 +4283,7 @@ class JIGGLE_OT_generate_cage(Operator):
             clothing_count = 0
             for garment in scene.objects:
                 if garment.type == 'MESH' and garment != obj and garment != cage_obj:
-                    g_sd = garment.modifiers.get(f"Jiggle_Cage_SD_{vg_name}") or garment.modifiers.get("Jiggle_Cage_SurfaceDeform")
+                    g_sd = get_cage_sd_modifier(garment, vg_name)
                     if g_sd and g_sd.target in {obj, None, existing_cage}:
                         g_sd.target = cage_obj
                         with context.temp_override(active_object=garment, object=garment):
@@ -4305,7 +4305,7 @@ class JIGGLE_OT_generate_cage(Operator):
                     bpy.data.meshes.remove(m, do_unlink=True)
                 except Exception:
                     pass
-            body_sd_cleanup = obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
+            body_sd_cleanup = get_cage_sd_modifier(obj, vg_name)
             if body_sd_cleanup:
                 obj.modifiers.remove(body_sd_cleanup)
             src_mod.show_viewport = orig_src_mod_viewport
@@ -5168,6 +5168,38 @@ def save_zone_bake_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_e
 
 
 JIGGLE_CAGE_BIND_PREFIX = "Jiggle_Cage_"
+# 2.x wrote every modifier it created with a `Giggle_` prefix. Recognition accepts both, so a
+# 2.x scene keeps its cages, bind modifiers and follow modifiers instead of looking empty.
+LEGACY_NAME_PREFIXES = ("Jiggle", "Giggle")
+LEGACY_CAGE_BIND_PREFIX = "Giggle_Cage_"
+JIGGLE_CAGE_BIND_PREFIXES = (JIGGLE_CAGE_BIND_PREFIX, LEGACY_CAGE_BIND_PREFIX)
+
+
+def is_jiggle_addon_name(name):
+    """True when a modifier, collection or group name was written by this add-on (2.x or 3.x)."""
+    return isinstance(name, str) and name.startswith(LEGACY_NAME_PREFIXES)
+
+
+def strip_jiggle_prefix(name):
+    """Drop a leading Jiggle_/Giggle_ from an add-on-created name."""
+    for prefix in ("Jiggle_", "Giggle_"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+def get_cage_sd_modifier(obj, vg_name):
+    """Surface Deform modifier binding a mesh to a cage, in 3.x or legacy 2.x naming."""
+    for prefix in ("Jiggle_Cage_SD_", "Giggle_Cage_SD_", "Jiggle_Cage_", "Giggle_Cage_"):
+        for suffix in (vg_name, "SurfaceDeform"):
+            mod = obj.modifiers.get(f"{prefix}{suffix}")
+            if mod is not None and mod.type == 'SURFACE_DEFORM':
+                return mod
+    for name in ("Jiggle_SurfaceDeform", "Giggle_SurfaceDeform"):
+        mod = obj.modifiers.get(name)
+        if mod is not None and mod.type == 'SURFACE_DEFORM':
+            return mod
+    return None
 
 
 def get_surface_deform_targets(objects=None):
@@ -5197,7 +5229,7 @@ def get_jiggle_cage_bind_targets(objects=None):
     for ob in objects:
         for m in ob.modifiers:
             if (m.type == 'SURFACE_DEFORM' and m.target
-                    and m.name.startswith(JIGGLE_CAGE_BIND_PREFIX)):
+                    and m.name.startswith(JIGGLE_CAGE_BIND_PREFIXES)):
                 targets.add(m.target)
     return targets
 
@@ -6485,7 +6517,7 @@ class VIEW3D_PT_jiggle_presets(VIEW3D_PT_jiggle_base, Panel):
             # Contextual Intelligent Apply Button with Cross-Anatomy Warning
             meta = get_mod_jiggle_metadata(active_mod) if active_mod else None
             active_cat = meta[1] if meta else None
-            target_name = active_mod.name.replace("Jiggle_", "") if active_mod else "Zone"
+            target_name = strip_jiggle_prefix(active_mod.name) if active_mod else "Zone"
             choice_cat = data.get('category_id', '')
             
             # Only flag cross-anatomy when both are specific categories and genuinely differ
@@ -7632,7 +7664,7 @@ class JIGGLE_OT_attach_clothing_proxy(Operator):
                 for m in list(cloth.modifiers):
                     if m == staged_sd:
                         continue
-                    if m.type == 'NODES' and m.name.startswith("Jiggle_") and m.name.endswith("_Follow"):
+                    if m.type == 'NODES' and is_jiggle_addon_name(m.name) and m.name.endswith("_Follow"):
                         cloth.modifiers.remove(m)
                     elif m.type == 'SURFACE_DEFORM' and m.name == "Jiggle_SurfaceDeform":
                         cloth.modifiers.remove(m)
@@ -7767,7 +7799,7 @@ class JIGGLE_OT_copy_zone_to_clothing(Operator):
             # Project vertex group from body to clothing using KDTree proximity
             source_vg_name = get_mod_socket_attribute_name(source_mod, 'Socket_2')
             if not source_vg_name or not isinstance(source_vg_name, str) or source_vg_name not in active_obj.vertex_groups:
-                mod_suffix = source_mod.name.replace("Jiggle_", "")
+                mod_suffix = strip_jiggle_prefix(source_mod.name)
                 if mod_suffix in active_obj.vertex_groups:
                     source_vg_name = mod_suffix
                 elif "Jiggle_Zone" in active_obj.vertex_groups:
@@ -8475,6 +8507,7 @@ _LEGACY_MARKER_PREFIX = "_giggle_"
 _LEGACY_PROXIES_COLLECTION = "Giggle_Proxies"
 _LEGACY_TEMP_COLLECTIONS = {"_tmp_Giggle_SurfaceDeform": "_tmp_Jiggle_SurfaceDeform"}
 _MIGRATION_FLAG = "_jz_v3_migrated"
+_SETTINGS_MIGRATION_FLAG = "_jz_v3_settings_migrated"
 
 
 def _migrate_legacy_giggle_markers():
@@ -8514,16 +8547,51 @@ def _migrate_legacy_giggle_markers():
     return changed
 
 
+def _migrate_legacy_scene_settings(scene):
+    """Copy 2.x `scene.giggle_settings` values onto `scene.jiggle_settings`.
+
+    Blender discards an unregistered PropertyGroup when a file loads, so this only
+    recovers data while the 2.x add-on is still installed and enabled. Returns the
+    number of copied properties.
+    """
+    if scene.get(_SETTINGS_MIGRATION_FLAG, False):
+        return 0
+    legacy = getattr(scene, "giggle_settings", None)
+    current = getattr(scene, "jiggle_settings", None)
+    if legacy is None or current is None:
+        return 0
+
+    copied = 0
+    for prop in current.bl_rna.properties:
+        identifier = prop.identifier
+        if identifier == "rna_type" or not hasattr(legacy, identifier):
+            continue
+        try:
+            value = getattr(legacy, identifier)
+            if prop.type == 'ENUM':
+                if value not in {item.identifier for item in prop.enum_items}:
+                    continue
+            setattr(current, identifier, value)
+            copied += 1
+        except Exception:
+            continue
+
+    scene[_SETTINGS_MIGRATION_FLAG] = True
+    return copied
+
+
 @bpy.app.handlers.persistent
 def jiggle_migrate_legacy_on_load(*_args):
     try:
         if not bpy.data.scenes:
             return
-        if all(scene.get(_MIGRATION_FLAG, False) for scene in bpy.data.scenes):
-            return
-        _migrate_legacy_giggle_markers()
+        pending = [s for s in bpy.data.scenes if not s.get(_MIGRATION_FLAG, False)]
+        if pending:
+            _migrate_legacy_giggle_markers()
+            for scene in pending:
+                scene[_MIGRATION_FLAG] = True
         for scene in bpy.data.scenes:
-            scene[_MIGRATION_FLAG] = True
+            _migrate_legacy_scene_settings(scene)
     except Exception:
         pass
 
@@ -8535,7 +8603,6 @@ def register():
         bpy.app.handlers.render_pre.append(render_pre_cache_check)
     if jiggle_migrate_legacy_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(jiggle_migrate_legacy_on_load)
-    jiggle_migrate_legacy_on_load()
     bpy.types.Scene.jiggle_settings = PointerProperty(type=JiggleSceneSettings)
     bpy.types.Collection.jiggle_show_render = BoolProperty(
         name="Show in Viewport & Render",
@@ -8549,6 +8616,9 @@ def register():
         get=get_show_object_render,
         set=set_show_object_render
     )
+    # Run after the settings property exists, so a 2.x scene already open in this
+    # session is migrated too, not only on the next file load.
+    jiggle_migrate_legacy_on_load()
 
 def unregister():
     if jiggle_migrate_legacy_on_load in bpy.app.handlers.load_post:

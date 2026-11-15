@@ -33,4 +33,4 @@ Whenever modifying `jiggle_zone/__init__.py`:
    - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.3\extensions\user_default\jiggle_zone\__init__.py`
    - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\extensions\user_default\jiggle_zone\__init__.py`
    - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\jiggle_zone\__init__.py`
-3. Repack `D:\Blender\Giggle\jiggle-zone.zip`.
+3. Repack `D:\Blender\Giggle\jiggle-zone.zip` with `python build_zip.py --check`.

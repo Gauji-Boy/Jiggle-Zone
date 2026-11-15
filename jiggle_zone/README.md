@@ -17,10 +17,21 @@ A high-performance Blender character secondary motion and XPBD soft-body simulat
 
 ## Upgrading from Giggle 2.x
 
-Jiggle Zone 3.0.0 uses a new extension id. Uninstall **Giggle Soft Body Physics** first, then
-install `jiggle-zone.zip`; otherwise both add-ons can be enabled at once. Opening a 2.x scene
-migrates legacy markers automatically, but keymaps and scripts that call `giggle.*` operators
-must be rebound to `jiggle.*`.
+Jiggle Zone 3.0.0 uses a new extension id, so Blender treats it as a different add-on.
+
+1. Install `jiggle-zone.zip` **while Giggle Soft Body Physics 2.1 is still installed and enabled**.
+2. Open each 2.x project once. Markers migrate and the panel settings copy across.
+3. Save the project, then remove the old add-on.
+
+Step 1 matters: Blender discards an unregistered property group when a file loads, so if you
+remove 2.1 first, Jiggle Zone starts from its defaults for bake range, cache path and preset
+selection. Those old values are not deleted from the file and remain readable by 2.1.
+
+What does not carry over:
+
+- The `Giggle_Proxies` collection is renamed to `Jiggle_Proxies`. Reopening a migrated file in
+  2.1 will not find it, so proxies must be re-linked.
+- `giggle.*` operators are gone with no alias. Keymaps and scripts must be rebound to `jiggle.*`.
 
 ## Quick Start
 
