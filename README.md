@@ -1,4 +1,4 @@
-# Jiggle Zone — 3.1.0
+# Jiggle Zone — 3.2.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 

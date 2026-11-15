@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Jiggle Zone",
     "author": "VOZHD1122 & RoboDrozd / Jiggle Zone",
-    "version": (3, 1, 0),
+    "version": (3, 2, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Sidebar > Jiggle Zone",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",

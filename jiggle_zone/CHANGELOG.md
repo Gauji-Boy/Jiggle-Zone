@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.0 — Wiggy 0.2.0 wave controls
+
+### Added
+- Added per-zone **Return Wave**, **Relax Time** and **Decay** controls for compatible Wiggy 0.2.0
+  modifiers, backed by `Socket_141`, `Socket_142` and `Socket_143`.
+- The controls are shown only when all three sockets are available. Wiggy 0.1 modifiers remain
+  unchanged, and existing presets preserve these settings.
+
 ## 3.1.0 — Wiggy 0.2.0 for new zones
 
 ### New zones
