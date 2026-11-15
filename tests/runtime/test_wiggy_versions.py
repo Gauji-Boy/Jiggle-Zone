@@ -16,6 +16,9 @@ and needs no installed add-on.
 import importlib.util
 import os
 import sys
+import tempfile
+import time
+from types import SimpleNamespace
 
 import bpy
 
@@ -65,6 +68,14 @@ def socket(mod, identifier):
     return getattr(mod.properties.inputs, identifier, None)
 
 
+def interface_socket(group, identifier):
+    return next(
+        (item for item in group.interface.items_tree
+         if getattr(item, "identifier", None) == identifier),
+        None,
+    )
+
+
 def snapshot(mod, identifiers):
     out = {}
     for identifier in identifiers:
@@ -75,6 +86,32 @@ def snapshot(mod, identifiers):
             getattr(entry, "attribute_name", None),
         )
     return out
+
+
+class LayoutProbe:
+    def __init__(self):
+        self.properties = []
+
+    def column(self):
+        return self
+
+    def prop(self, _data, identifier, **_kwargs):
+        self.properties.append(identifier)
+
+
+def draw_dynamics_properties():
+    panel = SimpleNamespace(layout=LayoutProbe())
+    g.VIEW3D_PT_jiggle_dynamics.draw(panel, bpy.context)
+    return panel.layout.properties
+
+
+def activate_zone(obj, mod):
+    for selected in bpy.context.selected_objects:
+        selected.select_set(False)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    settings = bpy.context.scene.jiggle_settings
+    settings.active_zone_index = g.get_jiggle_modifiers(obj).index(mod)
 
 
 bpy.ops.wm.read_homefile(use_empty=True)
@@ -154,6 +191,145 @@ check("0.2 receives the same values as 0.1", old_snapshot == new_snapshot,
 softness = new_snapshot.get("Socket_33", (None,))[0]
 check("0.2 softness matches the preset", abs(softness - preset["values"]["Socket_33"]) < 1e-4, softness)
 
+# --- 0.2 return-wave controls are per modifier and survive save/reopen -------------------------
+section("return-wave controls")
+wave_properties = ("zone_return_wave", "zone_relax_time", "zone_decay")
+wave_sockets = ("Socket_141", "Socket_142", "Socket_143")
+wave_values = (0.37, 1.8, 0.62)
+wave_ranges = ((0.0, 1.0), (0.05, 5.0), (0.0, 1.0))
+wave_defaults = (0.0, 1.0, 0.5)
+settings = bpy.context.scene.jiggle_settings
+
+for prop_name in wave_properties:
+    check(f"{prop_name} is registered", prop_name in settings.bl_rna.properties)
+
+for prop_name, identifier, default, value_range in zip(
+        wave_properties, wave_sockets, wave_defaults, wave_ranges):
+    item = interface_socket(new_group, identifier)
+    check(f"{identifier} asset default is preserved",
+          item is not None and abs(float(item.default_value) - default) < 1e-5,
+          getattr(item, "default_value", None))
+    if prop_name in settings.bl_rna.properties:
+        prop = settings.bl_rna.properties[prop_name]
+        check(f"{prop_name} range matches the approved range",
+              abs(prop.hard_min - value_range[0]) < 1e-6
+              and abs(prop.hard_max - value_range[1]) < 1e-6,
+              (prop.hard_min, prop.hard_max))
+
+if "zone_decay" in settings.bl_rna.properties:
+    decay_property = settings.bl_rna.properties["zone_decay"]
+    check("Decay description is preserved exactly",
+          decay_property.description
+          == "How much weaker the wave comes back each time: 0.5 is half as strong, 1 is no return at all",
+          decay_property.description)
+
+activate_zone(body, new_zone)
+wave_ui = draw_dynamics_properties()
+check("0.2 dynamics UI shows all wave controls",
+      set(wave_properties) <= set(wave_ui), wave_ui)
+for identifier in wave_sockets:
+    check(f"0.2 exposes {identifier}", socket(new_zone, identifier) is not None)
+
+# This cage uses the same body/group naming that sync_socket_to_cage resolves.
+cage = bpy.data.objects.new("Body_Zone_Cage", body.data.copy())
+bpy.context.scene.collection.objects.link(cage)
+cage_mod = cage.modifiers.new("Jiggle_Cage_XPBD", 'NODES')
+cage_mod.node_group = new_group
+g.set_mod_socket(new_zone, "Socket_2", attribute="Zone", sync_cage=False)
+g.set_mod_socket(cage_mod, "Socket_2", attribute="Zone", sync_cage=False)
+
+if all(prop in settings.bl_rna.properties for prop in wave_properties):
+    # Simulate a valid baked cache so the real status helper can verify invalidation.
+    baked_at = time.time()
+    body["_jiggle_baked_at_timestamp"] = baked_at
+    cage["_jiggle_baked_at_timestamp"] = baked_at
+    body.pop("_jiggle_settings_modified_at", None)
+    cage.pop("_jiggle_settings_modified_at", None)
+    cache_mod = SimpleNamespace(
+        type='NODES',
+        node_group=new_group,
+        bakes=[SimpleNamespace(data_blocks=[object()])],
+    )
+    cache_view = SimpleNamespace(type='MESH', modifiers=[cache_mod], get=cage.get)
+    check("simulated existing cache starts baked",
+          g.get_cage_bake_status(cache_view)[0] == 'BAKED',
+          g.get_cage_bake_status(cache_view))
+
+    for prop_name, identifier, value in zip(wave_properties, wave_sockets, wave_values):
+        setattr(settings, prop_name, value)
+        check(f"changing {prop_name} writes {identifier}",
+              abs(float(g.get_mod_socket(new_zone, identifier)) - value) < 1e-5,
+              g.get_mod_socket(new_zone, identifier))
+        check(f"changing {prop_name} syncs to cage",
+              abs(float(g.get_mod_socket(cage_mod, identifier)) - value) < 1e-5,
+              g.get_mod_socket(cage_mod, identifier))
+
+    check("wave setting change marks baked result outdated",
+          g.get_cage_bake_status(cache_view)[0] == 'OUTDATED',
+          g.get_cage_bake_status(cache_view))
+
+    # Existing presets intentionally omit the new sockets; applying one must preserve them.
+    preset_result = bpy.ops.jiggle.apply_preset(preset="REAL_BREASTS_NATURAL")
+    after_preset = tuple(g.get_mod_socket(new_zone, identifier) for identifier in wave_sockets)
+    check("preset reapplication succeeds", preset_result == {'FINISHED'}, preset_result)
+    check("preset reapplication preserves wave settings",
+          all(abs(float(actual) - expected) < 1e-5
+              for actual, expected in zip(after_preset, wave_values)),
+          after_preset)
+
+    second_zone = body.modifiers.new("Jiggle_Second_Modern", 'NODES')
+    second_zone.node_group = new_group
+    g.set_mod_socket(second_zone, "Socket_2", attribute="Zone_Second", sync_cage=False)
+    activate_zone(body, second_zone)
+    second_values = (0.82, 3.2, 0.17)
+    for prop_name, identifier, value in zip(wave_properties, wave_sockets, second_values):
+        setattr(settings, prop_name, value)
+        check(f"{prop_name} stores independently on the second zone",
+              abs(float(g.get_mod_socket(second_zone, identifier)) - value) < 1e-5,
+              g.get_mod_socket(second_zone, identifier))
+    activate_zone(body, new_zone)
+    first_values_after_switch = tuple(
+        g.get_mod_socket(new_zone, identifier) for identifier in wave_sockets
+    )
+    check("switching zones restores the first zone's values",
+          all(abs(float(actual) - expected) < 1e-5
+              for actual, expected in zip(first_values_after_switch, wave_values)),
+          first_values_after_switch)
+
+# Wiggy 0.1 must not expose or acquire any of the 0.2-only sockets.
+activate_zone(body, old_zone)
+legacy_ui = draw_dynamics_properties()
+check("0.1 dynamics UI hides wave controls",
+      not (set(wave_properties) & set(legacy_ui)), legacy_ui)
+if all(prop in settings.bl_rna.properties for prop in wave_properties):
+    settings.zone_decay = 0.91
+check("0.1 has no wave socket or fallback ID-property write",
+      all(socket(old_zone, identifier) is None
+          and g.get_mod_socket(old_zone, identifier) is None
+          for identifier in wave_sockets),
+      [g.get_mod_socket(old_zone, identifier) for identifier in wave_sockets])
+
+# Exercise the exact 0.2 group name with one socket removed; partial interfaces stay hidden.
+original_group_name = new_group.name
+new_group.name = "_Wiggy_0.2.0_wave_test_original"
+partial_group = new_group.copy()
+partial_group.name = g.WIGGY_NEW_GROUP
+missing_socket = next(
+    item for item in partial_group.interface.items_tree
+    if getattr(item, "identifier", None) == "Socket_143"
+)
+partial_group.interface.remove(missing_socket)
+partial_obj = bpy.data.objects.new("Partial_Wave_Test", body.data.copy())
+bpy.context.scene.collection.objects.link(partial_obj)
+partial_mod = partial_obj.modifiers.new("Jiggle_Partial_Wave", 'NODES')
+partial_mod.node_group = partial_group
+activate_zone(partial_obj, partial_mod)
+partial_ui = draw_dynamics_properties()
+check("0.2 group missing one socket hides all wave controls",
+      not (set(wave_properties) & set(partial_ui)), partial_ui)
+partial_group.name = "Wiggy Partial Wave Test"
+new_group.name = original_group_name
+
 # --- Socket_2 is an attribute on both versions ----------------------------------------------
 section("Socket_2 attribute handling")
 for label, mod in (("0.1", old_zone), ("0.2", new_zone)):
@@ -202,6 +378,24 @@ g.ensure_nodetree("Wiggy 0.2.0")
 check("existing 0.1 modifier keeps its group", old_zone.node_group is before,
       getattr(old_zone.node_group, "name", None))
 check("0.1 group survives alongside 0.2", "Wiggy 0.1" in bpy.data.node_groups)
+
+# Modifier input values, rather than scene-wide UI values, must persist in the .blend.
+if all(prop in settings.bl_rna.properties for prop in wave_properties):
+    activate_zone(body, new_zone)
+    with tempfile.TemporaryDirectory(prefix="jiggle_wave_settings_", dir=ROOT) as temp_dir:
+        blend_path = os.path.join(temp_dir, "wave_settings.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=blend_path)
+        bpy.ops.wm.open_mainfile(filepath=blend_path)
+        reopened_body = bpy.data.objects.get("Body")
+        reopened_zone = reopened_body.modifiers.get("Jiggle_Modern") if reopened_body else None
+        reopened_values = tuple(
+            g.get_mod_socket(reopened_zone, identifier) if reopened_zone else None
+            for identifier in wave_sockets
+        )
+        check("save/reopen restores all three wave values",
+              all(actual is not None and abs(float(actual) - expected) < 1e-5
+                  for actual, expected in zip(reopened_values, wave_values)),
+              reopened_values)
 
 g.unregister()
 

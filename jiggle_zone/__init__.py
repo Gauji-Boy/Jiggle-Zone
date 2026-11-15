@@ -2698,6 +2698,19 @@ def get_mod_socket_prop(mod, socket_id):
     inputs = getattr(properties, 'inputs', None) if properties else None
     return getattr(inputs, socket_id, None) if inputs is not None else None
 
+
+WIGGY_WAVE_SOCKET_IDS = ("Socket_141", "Socket_142", "Socket_143")
+
+
+def supports_wiggy_wave_settings(mod):
+    return bool(
+        mod
+        and getattr(getattr(mod, "node_group", None), "name", None) == WIGGY_NEW_GROUP
+        and all(get_mod_socket_prop(mod, socket_id) is not None
+                for socket_id in WIGGY_WAVE_SOCKET_IDS)
+    )
+
+
 def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
     """Set a Geometry Nodes modifier input; return False when the socket is unavailable."""
     is_wiggy = bool(getattr(mod, "node_group", None) and is_wiggy_group(mod.node_group))
@@ -3356,6 +3369,24 @@ class JiggleSceneSettings(PropertyGroup):
         description="How quickly oscillations settle down (higher = stops shaking faster)",
         min=0.0, max=10.0, soft_min=0.0, soft_max=5.0, step=5, precision=3,
         get=make_socket_get('Socket_8', 1.0), set=make_socket_set('Socket_8', 0.0, 10.0)
+    )
+    zone_return_wave: FloatProperty(
+        name="Return Wave",
+        description="How strongly the jiggle hands its motion to a slower wave that runs through the soft area, bounces off its border with the body and comes back weaker, like the fat under the skin after a slap or a shake. 0 is off. Stronger also takes more from a long, steady shaking",
+        min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, step=1, precision=3,
+        get=make_socket_get('Socket_141', 0.0), set=make_socket_set('Socket_141', 0.0, 1.0)
+    )
+    zone_relax_time: FloatProperty(
+        name="Relax Time",
+        description="About how many seconds the wave takes to run through the soft area and back. Longer is a slower, later return",
+        min=0.05, max=5.0, soft_min=0.05, soft_max=5.0, step=10, precision=2,
+        get=make_socket_get('Socket_142', 1.0), set=make_socket_set('Socket_142', 0.05, 5.0)
+    )
+    zone_decay: FloatProperty(
+        name="Decay",
+        description="How much weaker the wave comes back each time: 0.5 is half as strong, 1 is no return at all",
+        min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, step=1, precision=3,
+        get=make_socket_get('Socket_143', 0.5), set=make_socket_set('Socket_143', 0.0, 1.0)
     )
     zone_max_distance: FloatProperty(
         name="Max Distance (Sag Limit)",
@@ -6657,6 +6688,10 @@ class VIEW3D_PT_jiggle_dynamics(VIEW3D_PT_jiggle_base, Panel):
             col.prop(settings, "zone_mass_by_area", text="Mass by Area (Even Weight)")
             col.prop(settings, "zone_wobble", text="Wobble Strength", slider=True)
             col.prop(settings, "zone_damping", text="Damping (Lag)", slider=True)
+            if supports_wiggy_wave_settings(mod):
+                col.prop(settings, "zone_return_wave", slider=True)
+                col.prop(settings, "zone_relax_time", slider=True)
+                col.prop(settings, "zone_decay", slider=True)
             col.prop(settings, "zone_max_distance", text="Max Distance (Sag Limit)", slider=True)
             col.prop(settings, "zone_influence", text="Influence", slider=True)
         else:
