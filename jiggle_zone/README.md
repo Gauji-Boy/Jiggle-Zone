@@ -1,11 +1,12 @@
-# Jiggle Zone - 3.0.0
+# Jiggle Zone — 3.1.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 
 ## Requirements
 
 - Blender 5.2 LTS or Blender 5.3 Beta (or newer).
-- The bundled `assets/Wiggy_0.1.blend` and `assets/JiggleV2.blend` files must remain in the `assets/` directory next to `__init__.py`.
+- The bundled `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend` and `assets/JiggleV2.blend`
+  files must remain in the `assets/` directory next to `__init__.py`.
 
 ## Install
 
@@ -55,6 +56,10 @@ What does not carry over:
 
 ## Compatibility Notes
 
-- **Wiggy XPBD** is the default high-performance engine for creating new zones.
+- **Wiggy XPBD** is the default high-performance engine for creating new zones, and new zones use
+  the bundled **Wiggy 0.2.0** solver group.
+- Zones from earlier projects keep the solver group their file already contains: opening a 3.0.0
+  project does not inject or replace its `Wiggy 0.1` groups, and zones added afterwards use 0.2.0
+  alongside them.
 - **Full-Mesh XPBD** remains fully supported as a hero-shot toggle.
 - Existing **Jiggle V2** modifiers from v1.2.1 projects remain functional and retain their legacy dynamics controls.

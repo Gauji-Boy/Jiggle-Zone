@@ -23,8 +23,9 @@ powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1
 powershell -ExecutionPolicy Bypass -File tests\make_review_packet.ps1 -From v2.0.0-baseline
 ```
 
-`run_tests.ps1` copies the source into each installed extension first, then runs both suites on
-every installed Blender. Logs land in `artifacts\<stamp>\` with `summary.txt`.
+`run_tests.ps1` copies the source and bundled assets into each installed extension before running
+the Blender suites on every installed version; it runs the name audit and its self-test once with
+Python. Logs land in `artifacts\<stamp>\` with `summary.txt`.
 
 `make_review_packet.ps1` writes `scratch\reviews\<label>\`:
 

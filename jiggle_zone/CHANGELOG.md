@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.1.0 — Wiggy 0.2.0 for new zones
+
+### New zones
+- New zones are created on the bundled **Wiggy 0.2.0** solver, shipped as
+  `assets/Wiggy_0.2.0.blend`.
+- 0.2.0 adds 11 solver inputs (54 in total) and keeps every one of the 43 inputs 0.1 had: none
+  were removed, renamed or retyped, and the 86 bundled presets still address the same 13 sockets.
+- Presets, support profiles, colliders and the `Socket_2` vertex-group input behave the same on
+  both versions.
+
+### Existing projects
+- A zone keeps the node group its file already embeds. Opening a project saved with 3.0.0 injects
+  no 0.2 group or replaces its 0.1 solver; zones added to that project afterwards use 0.2.0
+  alongside the 0.1 ones.
+- Cage creation inherits the group from the source zone, so a 0.1 zone keeps a 0.1 cage.
+- `assets/Wiggy_0.1.blend` stays in the package, so existing files keep resolving their group.
+
+### Fixed
+- Solver recognition is an explicit allow-list of the bundled groups instead of a hardcoded
+  `"Wiggy 0.1"` comparison at 36 call sites. Every one of those sites failed silently when it did
+  not match, so a 0.2 zone could be skipped by an operator or drawn as an empty panel.
+- The asset file is chosen from an explicit group-to-file map. An unknown group now loads nothing
+  instead of silently reading a Wiggy asset.
+
 ## 3.0.0 — Jiggle Zone rename (breaking identity change)
 
 ### Renamed

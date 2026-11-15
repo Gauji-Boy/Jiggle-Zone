@@ -128,7 +128,8 @@ foreach ($audit in @(
         continue
     }
     if (-not $python) {
-        $summary.Add("SKIP  $($audit.Name) : python not on PATH")
+        $summary.Add("FAIL  $($audit.Name) : Python is required but not on PATH")
+        $failed++
         continue
     }
     $log = Join-Path $out ("python_{0}.log" -f $audit.Key)
