@@ -73,5 +73,20 @@ zone_group = bpy.data.node_groups.new("Unrelated Group", "GeometryNodeTree")
 body.modifiers.new("Giggle_Thigh_Zone", 'NODES').node_group = zone_group
 check("legacy zone modifier recognised", g.is_jiggle_modifier(body.modifiers["Giggle_Thigh_Zone"]))
 
+# --- a previous clothing attach's Surface Deform is stale in both naming eras -------------
+# Leaving the 2.x one alive leaves two bound Surface Deforms after a 3.0 re-attach, and the
+# stale bind takes over the moment the new one is disabled. A cage bind must never match.
+stale = body.modifiers.new("Giggle_SurfaceDeform", 'SURFACE_DEFORM')
+check("2.x staged proxy deform is stale", g.is_staged_proxy_sd(stale))
+stale.name = "Jiggle_SurfaceDeform"
+check("3.x staged proxy deform is stale", g.is_staged_proxy_sd(stale))
+stale.name = "_tmp_Giggle_SurfaceDeform"
+check("2.x leftover staged deform is stale", g.is_staged_proxy_sd(stale))
+check("cage bind is not stale", not g.is_staged_proxy_sd(bind))
+check("cage surface deform is not stale",
+      not g.is_staged_proxy_sd(cage.modifiers.new("Jiggle_Cage_SurfaceDeform", 'SURFACE_DEFORM')))
+check("follow node group is not stale",
+      not g.is_staged_proxy_sd(cage.modifiers["Jiggle_Cage_XPBD"]))
+
 print("RESULT", "PASS" if not failures else f"FAIL ({len(failures)} checks)")
 sys.exit(1 if failures else 0)

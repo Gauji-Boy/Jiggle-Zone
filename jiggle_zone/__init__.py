@@ -5188,6 +5188,19 @@ def strip_jiggle_prefix(name):
     return name
 
 
+# The Surface Deform this operator stages on clothing. 2.x used the Giggle_ prefix, so both eras
+# count as stale: after an in-place upgrade a 2.x garment would otherwise keep the old modifier
+# next to the new one - two bound Surface Deforms in the stack, and the old one silently takes
+# over if the new one is ever disabled or removed.
+STAGED_PROXY_SD_NAMES = ("Jiggle_SurfaceDeform", "Giggle_SurfaceDeform",
+                         "_tmp_Jiggle_SurfaceDeform", "_tmp_Giggle_SurfaceDeform")
+
+
+def is_staged_proxy_sd(mod):
+    """True for a previous clothing attach's Surface Deform, from 2.x or 3.x."""
+    return mod.type == 'SURFACE_DEFORM' and mod.name in STAGED_PROXY_SD_NAMES
+
+
 def get_cage_sd_modifier(obj, vg_name):
     """Surface Deform modifier binding a mesh to a cage, in 3.x or legacy 2.x naming."""
     for prefix in ("Jiggle_Cage_SD_", "Giggle_Cage_SD_", "Jiggle_Cage_", "Giggle_Cage_"):
@@ -7666,7 +7679,7 @@ class JIGGLE_OT_attach_clothing_proxy(Operator):
                         continue
                     if m.type == 'NODES' and is_jiggle_addon_name(m.name) and m.name.endswith("_Follow"):
                         cloth.modifiers.remove(m)
-                    elif m.type == 'SURFACE_DEFORM' and m.name == "Jiggle_SurfaceDeform":
+                    elif is_staged_proxy_sd(m):
                         cloth.modifiers.remove(m)
                 staged_sd.name = "Jiggle_SurfaceDeform"
 
