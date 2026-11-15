@@ -29,6 +29,10 @@
 
 ### Behaviour
 - No simulation behaviour changes. This is the 2.1.0 engine under a new identity.
+- **Preserved clothing attachments during cage rebuilds:** Cage discovery now distinguishes
+  cage-specific Surface Deform modifiers from clothing attachment modifiers, preventing legacy
+  `Giggle_SurfaceDeform` and current `Jiggle_SurfaceDeform` clothing bindings from being mistaken
+  for cage bindings or removed.
 
 
 ## 2.1.0 — Cage XPBD workflow and reliable clothing attachment

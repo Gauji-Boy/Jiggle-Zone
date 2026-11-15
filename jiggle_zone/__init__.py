@@ -5202,16 +5202,17 @@ def is_staged_proxy_sd(mod):
 
 
 def get_cage_sd_modifier(obj, vg_name):
-    """Surface Deform modifier binding a mesh to a cage, in 3.x or legacy 2.x naming."""
+    """Surface Deform modifier binding a mesh to a cage, in 3.x or legacy 2.x naming.
+
+    Only cage-specific names count. The bare `Jiggle_SurfaceDeform` / `Giggle_SurfaceDeform`
+    names belong to clothing attach (`is_staged_proxy_sd`); treating one as a cage bind would
+    let a cage build remove a garment's attachment.
+    """
     for prefix in ("Jiggle_Cage_SD_", "Giggle_Cage_SD_", "Jiggle_Cage_", "Giggle_Cage_"):
         for suffix in (vg_name, "SurfaceDeform"):
             mod = obj.modifiers.get(f"{prefix}{suffix}")
             if mod is not None and mod.type == 'SURFACE_DEFORM':
                 return mod
-    for name in ("Jiggle_SurfaceDeform", "Giggle_SurfaceDeform"):
-        mod = obj.modifiers.get(name)
-        if mod is not None and mod.type == 'SURFACE_DEFORM':
-            return mod
     return None
 
 

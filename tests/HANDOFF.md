@@ -50,13 +50,27 @@ reports both and the collapsed comparison, so a reviewer can confirm the ZIP mat
 
 ## Runtime QA (handoff text)
 
-The repeatable runtime checks live in `tests\runtime\` and already run inside `run_tests.ps1`:
+The repeatable runtime checks live in `tests\runtime\`:
 
 | Script                            | Needs                    | Checks                                            |
 | --------------------------------- | ------------------------ | ------------------------------------------------- |
 | `test_viewport_qa.py`             | `poc_cage_xpbd_kasumi`   | rewind drift on the evaluated mesh, finite frames, followers, cage modifier |
 | `test_secondary_scene.py`         | any scene                | registration, operator availability, scene props   |
 | `test_clean_install_zip.py`       | the built ZIP            | install, byte parity, version agreement, operators |
+| `test_cage_rebuild_preserves_clothing.py` | installed add-on + `poc_cage_xpbd_kasumi` | a garment's clothing Surface Deform survives cage generation and rebuild, cage discovery ignores bare clothing names |
+
+`test_cage_rebuild_preserves_clothing.py` drives `bpy.ops.jiggle.*`, so the add-on must be installed
+and enabled in the profile that runs it: it needs the installed copy, not the source file. Run it
+without `--factory-startup`, which skips the user preferences that enable the extension:
+
+```
+blender -b poc_cage_xpbd_kasumi.blend --python-exit-code 1 \
+    --python tests/runtime/test_cage_rebuild_preserves_clothing.py
+```
+
+`run_tests.ps1` syncs the source into each installed profile before it runs its suites; run this
+script separately against that same profile, or add it to the suite list in `run_tests.ps1`.
+Verified on 5.2.2 LTS and 5.3.0 Beta.
 
 They exit non-zero on failure. A QA report is only meaningful if the script can fail — the earlier
 viewport script caught every exception and printed `PASS`, and measured `obj.data` (which no
