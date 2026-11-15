@@ -1,11 +1,11 @@
 schema_version = "1.0.0"
-id = "giggle_physics"
-version = "2.1.0"
-name = "Giggle Soft Body Physics"
+id = "jiggle_zone"
+version = "3.0.0"
+name = "Jiggle Zone"
 tagline = "Interactive soft body jiggle physics and secondary motion for characters and objects"
-maintainer = "VOZHD1122 & RoboDrozd / Giggle"
+maintainer = "VOZHD1122 & RoboDrozd / Jiggle Zone"
 type = "add-on"
 tags = ["Animation", "Physics", "Rigging"]
 blender_version_min = "5.2.0"
 license = ["SPDX:MIT"]
-website = "https://github.com/RoboDrozd/wiggy"
+website = "https://github.com/Gauji-Boy/Jiggle-Zone"

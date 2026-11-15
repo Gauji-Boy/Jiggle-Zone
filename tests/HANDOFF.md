@@ -1,4 +1,4 @@
-# Giggle handoff
+# Jiggle handoff
 
 Three roles, one source of truth.
 
@@ -62,7 +62,7 @@ They exit non-zero on failure. A QA report is only meaningful if the script can 
 viewport script caught every exception and printed `PASS`, and measured `obj.data` (which no
 modifier can move), so it reported zero drift no matter what happened.
 
-> You are testing an update to Giggle Physics. Your job is runtime verification, not redesign.
+> You are testing an update to Jiggle Physics. Your job is runtime verification, not redesign.
 >
 > 1. Read `change.diff` and understand the intended change.
 > 2. Test the source on Blender 5.2.2 LTS and 5.3.0 Beta.
@@ -79,11 +79,11 @@ modifier can move), so it reported zero drift no matter what happened.
 ## Reviewer
 
 Read `change.diff`, `api.diff` and `summary.txt`. Re-check the claims that matter against the
-source, then verify the ZIP: its `giggle_addon/__init__.py` entry must hash the same as
-`giggle_addon/__init__.py` in the tree.
+source, then verify the ZIP: its `jiggle_zone/__init__.py` entry must hash the same as
+`jiggle_zone/__init__.py` in the tree.
 
-Version numbers must agree in three places: `giggle_addon/blender_manifest.toml`, `bl_info` in
-`giggle_addon/__init__.py`, and the top `##` heading in `giggle_addon/CHANGELOG.md`.
+Version numbers must agree in three places: `jiggle_zone/blender_manifest.toml`, `bl_info` in
+`jiggle_zone/__init__.py`, and the top `##` heading in `jiggle_zone/CHANGELOG.md`.
 
 ## Known limits in the test suite
 

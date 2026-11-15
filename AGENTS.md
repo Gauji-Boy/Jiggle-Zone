@@ -27,10 +27,10 @@ Whenever the user asks exploratory questions (*"Shall we change..."*, *"What do 
 ---
 
 ## 4. Multi-Version Testing & Packaging
-Whenever modifying `giggle_addon/__init__.py`:
+Whenever modifying `jiggle_zone/__init__.py`:
 1. Test headless across installed Blender versions (Blender 5.2 LTS and Blender 5.3 Beta).
 2. Sync the updated file to all extension directories:
-   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.3\extensions\user_default\giggle_physics\__init__.py`
-   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\extensions\user_default\giggle_physics\__init__.py`
-   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\giggle_addon\__init__.py`
-3. Repack `D:\Blender\Giggle\giggle_addon.zip`.
+   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.3\extensions\user_default\jiggle_zone\__init__.py`
+   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\extensions\user_default\jiggle_zone\__init__.py`
+   - `C:\Users\susha\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\jiggle_zone\__init__.py`
+3. Repack `D:\Blender\Giggle\jiggle-zone.zip`.

@@ -1,4 +1,4 @@
-"""Smoke test on a scene with no Giggle setup: registration, operators, no tracebacks.
+"""Smoke test on a scene with no Jiggle setup: registration, operators, no tracebacks.
 
     blender -b <any.blend> --python-exit-code 1 --python tests/runtime/test_secondary_scene.py
 """
@@ -24,14 +24,14 @@ def main():
     print("objects:", len(bpy.data.objects),
           "armatures:", [o.name for o in bpy.data.objects if o.type == 'ARMATURE'])
 
-    module = bpy.context.preferences.addons.get("bl_ext.user_default.giggle_physics")
+    module = bpy.context.preferences.addons.get("bl_ext.user_default.jiggle_zone")
     if module is None:
         print("FAIL the add-on is not enabled in this Blender")
         return 1
     print("version:", getattr(module.module, "bl_info", {}).get("version"))
 
-    available = [name for name in dir(bpy.ops.giggle) if not name.startswith("_")]
-    print("giggle operators:", len(available))
+    available = [name for name in dir(bpy.ops.jiggle) if not name.startswith("_")]
+    print("jiggle operators:", len(available))
     missing = [name for name in REQUIRED_OPS if name not in available]
     if missing:
         print("FAIL missing operators:", missing)
@@ -39,11 +39,11 @@ def main():
 
     scene = bpy.context.scene
     print("frame range:", scene.frame_start, scene.frame_end)
-    if not hasattr(scene, "giggle_settings"):
-        print("FAIL giggle_settings missing on the scene")
+    if not hasattr(scene, "jiggle_settings"):
+        print("FAIL jiggle_settings missing on the scene")
         return 1
 
-    print("PASS registration and operators on a scene without a Giggle setup")
+    print("PASS registration and operators on a scene without a Jiggle setup")
     return 0
 
 

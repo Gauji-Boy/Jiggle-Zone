@@ -27,7 +27,7 @@ if SOURCE_ROOT not in sys.path:
 import importlib.util
 
 _SPEC = importlib.util.spec_from_file_location(
-    "giggle_under_test", os.path.join(SOURCE_ROOT, "giggle_addon", "__init__.py"))
+    "jiggle_under_test", os.path.join(SOURCE_ROOT, "jiggle_zone", "__init__.py"))
 g = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(g)
 
@@ -48,8 +48,8 @@ def check(name, condition, detail=""):
 
 def get_cage():
     ctx = bpy.context
-    cages = g.get_giggle_simulation_objects(ctx)
-    assert cages, "no Giggle cage in the test scene"
+    cages = g.get_jiggle_simulation_objects(ctx)
+    assert cages, "no Jiggle cage in the test scene"
     cage = cages[0]
     mod = next(m for m in cage.modifiers
                if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1')
@@ -97,7 +97,7 @@ def live_addon_module():
     `preferences.addons[key].module` is the dotted name, not the module object, so the loaded
     module has to be looked up in `sys.modules`.
     """
-    for key in ("bl_ext.user_default.giggle_physics", "giggle_physics", "giggle_addon"):
+    for key in ("bl_ext.user_default.jiggle_zone", "jiggle_zone", "jiggle_zone"):
         if bpy.context.preferences.addons.get(key) is None:
             continue
         module = sys.modules.get(key)
@@ -109,7 +109,7 @@ def live_addon_module():
 def test_validity_invalidation():
     ctx = bpy.context
     scene = ctx.scene
-    settings = scene.giggle_settings
+    settings = scene.jiggle_settings
     cage, mod = get_cage()
 
     scene.frame_start = 1
@@ -117,7 +117,7 @@ def test_validity_invalidation():
     settings.bake_use_scene_range = True
     settings.bake_storage_mode = 'PACKED'
 
-    ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+    ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
     check("bake 1-10 succeeds", ok, err)
     status, reason = g.check_cage_validity(cage, ctx)
     check("fresh bake reads BAKED", status == 'BAKED', f"{status}: {reason}")
@@ -147,11 +147,11 @@ def test_validity_invalidation():
     status, reason = g.check_cage_validity(cage, ctx)
     check("storage restored reads BAKED", status == 'BAKED', f"{status}: {reason}")
 
-    cage['_giggle_bake_schema_version'] = '1.2.0'
+    cage['_jiggle_bake_schema_version'] = '1.2.0'
     status, reason = g.check_cage_validity(cage, ctx)
     check("old fingerprint schema reads OUTDATED", status == 'OUTDATED' and 'schema' in reason.lower(),
           f"{status}: {reason}")
-    cage['_giggle_bake_schema_version'] = g.FINGERPRINT_SCHEMA
+    cage['_jiggle_bake_schema_version'] = g.FINGERPRINT_SCHEMA
     status, reason = g.check_cage_validity(cage, ctx)
     check("current schema reads BAKED again", status == 'BAKED', f"{status}: {reason}")
 
@@ -160,21 +160,21 @@ def test_failed_bake_keeps_cache():
     ctx = bpy.context
     cage, mod = get_cage()
     before_blocks = block_count(mod)
-    before_stamp = cage.get('_giggle_baked_at_timestamp')
-    before_status = cage.get('_giggle_status')
+    before_stamp = cage.get('_jiggle_baked_at_timestamp')
+    before_status = cage.get('_jiggle_status')
     group_name = mod.node_group.name
 
     mod.node_group.name = 'Wiggy_not_ours'
-    ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+    ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
     mod.node_group.name = group_name
 
     check("bake on a broken modifier fails", ok is False, err)
     check("failed bake keeps the old blocks", block_count(mod) == before_blocks,
           f"{before_blocks} -> {block_count(mod)}")
-    check("failed bake keeps the old stamp", cage.get('_giggle_baked_at_timestamp') == before_stamp)
-    check("failed bake keeps the old status", cage.get('_giggle_status') == before_status,
-          f"{before_status} -> {cage.get('_giggle_status')}")
-    check("failed bake records the error", bool(cage.get('_giggle_last_bake_error')))
+    check("failed bake keeps the old stamp", cage.get('_jiggle_baked_at_timestamp') == before_stamp)
+    check("failed bake keeps the old status", cage.get('_jiggle_status') == before_status,
+          f"{before_status} -> {cage.get('_jiggle_status')}")
+    check("failed bake records the error", bool(cage.get('_jiggle_last_bake_error')))
 
     status, reason = g.check_cage_validity(cage, ctx)
     check("cache still valid after the failure", status == 'BAKED', f"{status}: {reason}")
@@ -190,26 +190,26 @@ def test_bake_operator_failure_keeps_cache():
     ctx = bpy.context
     cage, mod = get_cage()
     before_blocks = block_count(mod)
-    before_stamp = cage.get('_giggle_baked_at_timestamp')
-    before_status = cage.get('_giggle_status')
-    before_fp = cage.get('_giggle_bake_fingerprint_json')
+    before_stamp = cage.get('_jiggle_baked_at_timestamp')
+    before_status = cage.get('_jiggle_status')
+    before_fp = cage.get('_jiggle_bake_fingerprint_json')
     original = g.run_bake_operator
 
     try:
         g.run_bake_operator = lambda context, cage_obj: {'CANCELLED'}
-        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
         check("a cancelled bake operator fails the step", ok is False, err)
         check("a cancelled bake keeps the old blocks", block_count(mod) == before_blocks,
               f"{before_blocks} -> {block_count(mod)}")
         check("a cancelled bake keeps the old stamp",
-              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+              cage.get('_jiggle_baked_at_timestamp') == before_stamp)
         check("a cancelled bake keeps the old fingerprint",
-              cage.get('_giggle_bake_fingerprint_json') == before_fp)
-        check("a cancelled bake keeps the old status", cage.get('_giggle_status') == before_status,
-              f"{before_status} -> {cage.get('_giggle_status')}")
+              cage.get('_jiggle_bake_fingerprint_json') == before_fp)
+        check("a cancelled bake keeps the old status", cage.get('_jiggle_status') == before_status,
+              f"{before_status} -> {cage.get('_jiggle_status')}")
         check("a cancelled bake records the operator result",
-              'CANCELLED' in (cage.get('_giggle_last_bake_error') or ''),
-              cage.get('_giggle_last_bake_error'))
+              'CANCELLED' in (cage.get('_jiggle_last_bake_error') or ''),
+              cage.get('_jiggle_last_bake_error'))
         status, reason = g.check_cage_validity(cage, ctx)
         check("cache still valid after a cancelled bake", status == 'BAKED', f"{status}: {reason}")
 
@@ -217,24 +217,24 @@ def test_bake_operator_failure_keeps_cache():
             raise RuntimeError("injected bake failure")
 
         g.run_bake_operator = raising
-        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
         check("an exception from the bake operator fails the step", ok is False, err)
         check("a raised bake keeps the old blocks", block_count(mod) == before_blocks,
               f"{before_blocks} -> {block_count(mod)}")
         check("a raised bake keeps the old stamp",
-              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+              cage.get('_jiggle_baked_at_timestamp') == before_stamp)
         check("a raised bake keeps the old fingerprint",
-              cage.get('_giggle_bake_fingerprint_json') == before_fp)
-        check("a raised bake keeps the old status", cage.get('_giggle_status') == before_status,
-              f"{before_status} -> {cage.get('_giggle_status')}")
+              cage.get('_jiggle_bake_fingerprint_json') == before_fp)
+        check("a raised bake keeps the old status", cage.get('_jiggle_status') == before_status,
+              f"{before_status} -> {cage.get('_jiggle_status')}")
         check("the raised error is recorded",
-              'injected bake failure' in (cage.get('_giggle_last_bake_error') or ''),
-              cage.get('_giggle_last_bake_error'))
+              'injected bake failure' in (cage.get('_jiggle_last_bake_error') or ''),
+              cage.get('_jiggle_last_bake_error'))
         status, reason = g.check_cage_validity(cage, ctx)
         check("cache still valid after a raised bake", status == 'BAKED', f"{status}: {reason}")
     finally:
         g.run_bake_operator = original
-        cage.pop('_giggle_last_bake_error', None)
+        cage.pop('_jiggle_last_bake_error', None)
 
 
 def test_fingerprint_change_marks_outdated():
@@ -253,23 +253,23 @@ def test_fingerprint_change_marks_outdated():
 
     try:
         g.compute_zone_fingerprint = drifting
-        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
         check("a changed fingerprint fails the step", ok is False, err)
         check("the reason names the dependency change",
               'modified' in (err or '').lower(), err)
         check("the bake really ran, so this is not an early return", block_count(mod) > 0,
               block_count(mod))
         check("a changed fingerprint marks the cache OUTDATED",
-              cage.get('_giggle_status') == 'OUTDATED', cage.get('_giggle_status'))
+              cage.get('_jiggle_status') == 'OUTDATED', cage.get('_jiggle_status'))
         check("a changed fingerprint clears the valid flag",
-              cage.get('_giggle_last_known_valid') is False,
-              cage.get('_giggle_last_known_valid'))
+              cage.get('_jiggle_last_known_valid') is False,
+              cage.get('_jiggle_last_known_valid'))
         check("the outdated reason is stored",
-              'modified' in (cage.get('_giggle_outdated_reason') or '').lower(),
-              cage.get('_giggle_outdated_reason'))
+              'modified' in (cage.get('_jiggle_outdated_reason') or '').lower(),
+              cage.get('_jiggle_outdated_reason'))
         check("the failure is recorded as a bake error",
-              'modified' in (cage.get('_giggle_last_bake_error') or '').lower(),
-              cage.get('_giggle_last_bake_error'))
+              'modified' in (cage.get('_jiggle_last_bake_error') or '').lower(),
+              cage.get('_jiggle_last_bake_error'))
 
         # No rollback is claimed anywhere: the cache that is on disk is the new one, so validity
         # has to say it cannot be trusted.
@@ -278,7 +278,7 @@ def test_fingerprint_change_marks_outdated():
               f"{status}: {reason}")
     finally:
         g.compute_zone_fingerprint = original
-        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//giggle_cache/', 1, 10)
+        ok, err = g.execute_cage_bake_step(cage, ctx, 'PACKED', '//jiggle_cache/', 1, 10)
         check("a clean rebake restores a valid cache", ok, err)
         status, reason = g.check_cage_validity(cage, ctx)
         check("the restored cache reads BAKED", status == 'BAKED', f"{status}: {reason}")
@@ -289,19 +289,19 @@ def test_bake_operator_refuses_without_backup():
     cage, mod = get_cage()
     live = live_addon_module()
     if live is None or not hasattr(live, 'prepare_cache_replacement') \
-            or not hasattr(bpy.ops.giggle, 'bake_all_cages'):
+            or not hasattr(bpy.ops.jiggle, 'bake_all_cages'):
         print("SKIP backup gating: add-on is not enabled in this Blender")
         return
 
     before_blocks = block_count(mod)
-    before_stamp = cage.get('_giggle_baked_at_timestamp')
+    before_stamp = cage.get('_jiggle_baked_at_timestamp')
     original = live.prepare_cache_replacement
     try:
         live.prepare_cache_replacement = lambda targets: (False, "test: backup unavailable")
         result = None
         reported = ""
         try:
-            result = bpy.ops.giggle.bake_all_cages()
+            result = bpy.ops.jiggle.bake_all_cages()
         except RuntimeError as exc:
             # Blender raises for a reported ERROR instead of returning CANCELLED.
             reported = str(exc)
@@ -314,7 +314,7 @@ def test_bake_operator_refuses_without_backup():
         check("a refused backup leaves the cache untouched", block_count(mod) == before_blocks,
               f"{before_blocks} -> {block_count(mod)}")
         check("a refused backup leaves the stamp untouched",
-              cage.get('_giggle_baked_at_timestamp') == before_stamp)
+              cage.get('_jiggle_baked_at_timestamp') == before_stamp)
     finally:
         live.prepare_cache_replacement = original
 
@@ -330,67 +330,67 @@ def test_ownership():
         me.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
         ob = bpy.data.objects.new(name, me)
         scene.collection.objects.link(ob)
-        mod = ob.modifiers.new("Giggle", 'NODES')
+        mod = ob.modifiers.new("Jiggle", 'NODES')
         mod.node_group = group
         for key, value in (marker or {}).items():
             ob[key] = value
         return ob
 
     foreign = mesh_with_wiggy("Hair_Cage")
-    owned = mesh_with_wiggy("Owned_Cage", {"_giggle_cage": True})
-    legacy = mesh_with_wiggy("Legacy_Cage", {"_giggle_source_body": "Body", "_giggle_vg_name": "VG"})
-    collection = bpy.data.collections.new("Giggle_Cages")
+    owned = mesh_with_wiggy("Owned_Cage", {"_jiggle_cage": True})
+    legacy = mesh_with_wiggy("Legacy_Cage", {"_jiggle_source_body": "Body", "_jiggle_vg_name": "VG"})
+    collection = bpy.data.collections.new("Jiggle_Cages")
     scene.collection.children.link(collection)
     in_collection = mesh_with_wiggy("Collection_Cage")
     for c in list(in_collection.users_collection):
         c.objects.unlink(in_collection)
     collection.objects.link(in_collection)
 
-    found = g.get_giggle_simulation_objects(ctx)
+    found = g.get_jiggle_simulation_objects(ctx)
     check("a cage named *_Cage is not claimed", foreign not in found)
-    check("a cage in Giggle_Cages is not claimed", in_collection not in found)
+    check("a cage in Jiggle_Cages is not claimed", in_collection not in found)
     check("a cage with the ownership flag is found", owned in found)
     check("a legacy cage is adopted and found", legacy in found)
-    check("legacy adoption writes the flag", legacy.get('_giggle_cage') is True)
+    check("legacy adoption writes the flag", legacy.get('_jiggle_cage') is True)
 
-    # A clothing proxy carries the same metadata a legacy cage does, plus _giggle_proxy, and a
+    # A clothing proxy carries the same metadata a legacy cage does, plus _jiggle_proxy, and a
     # garment binds to it through Surface Deform. Attaching clothes must never turn the proxy into
     # a simulation cage.
     proxy = mesh_with_wiggy("Proxy_Target", {
-        "_giggle_source_body": "Body",
-        "_giggle_source_verts": 1000,
-        "_giggle_vg_name": "VG",
-        "_giggle_proxy": True,
+        "_jiggle_source_body": "Body",
+        "_jiggle_source_verts": 1000,
+        "_jiggle_vg_name": "VG",
+        "_jiggle_proxy": True,
     })
     garment = bpy.data.objects.new("Garment", bpy.data.meshes.new("Garment"))
     scene.collection.objects.link(garment)
-    garment.modifiers.new("Giggle_SurfaceDeform", 'SURFACE_DEFORM').target = proxy
+    garment.modifiers.new("Jiggle_SurfaceDeform", 'SURFACE_DEFORM').target = proxy
 
-    found = g.get_giggle_simulation_objects(ctx)
+    found = g.get_jiggle_simulation_objects(ctx)
     check("a clothing proxy is not claimed as a cage", proxy not in found)
-    check("a clothing proxy is not stamped with the cage flag", not proxy.get('_giggle_cage'))
+    check("a clothing proxy is not stamped with the cage flag", not proxy.get('_jiggle_cage'))
 
     # The garment itself is not a cage either, whatever it is bound to.
     check("a garment bound to a proxy is not claimed", garment not in found)
 
-    # Builds before the proxy check stamped _giggle_cage on proxies. The proxy marker has to win,
+    # Builds before the proxy check stamped _jiggle_cage on proxies. The proxy marker has to win,
     # or those files keep baking their clothing proxies forever.
     stale_proxy = mesh_with_wiggy("Stale_Proxy_Target", {
-        "_giggle_source_body": "Body",
-        "_giggle_vg_name": "VG",
-        "_giggle_proxy": True,
-        "_giggle_cage": True,
+        "_jiggle_source_body": "Body",
+        "_jiggle_vg_name": "VG",
+        "_jiggle_proxy": True,
+        "_jiggle_cage": True,
     })
     stale_garment = bpy.data.objects.new("Stale_Garment", bpy.data.meshes.new("Stale_Garment"))
     scene.collection.objects.link(stale_garment)
-    stale_garment.modifiers.new("Giggle_SurfaceDeform", 'SURFACE_DEFORM').target = stale_proxy
+    stale_garment.modifiers.new("Jiggle_SurfaceDeform", 'SURFACE_DEFORM').target = stale_proxy
 
-    found = g.get_giggle_simulation_objects(ctx)
+    found = g.get_jiggle_simulation_objects(ctx)
     check("a proxy already stamped as a cage is still rejected", stale_proxy not in found)
-    check("the stale cage flag is removed from the proxy", not stale_proxy.get('_giggle_cage'),
-          stale_proxy.get('_giggle_cage'))
+    check("the stale cage flag is removed from the proxy", not stale_proxy.get('_jiggle_cage'),
+          stale_proxy.get('_jiggle_cage'))
 
-    # A pre-1.2 cage has no metadata, so the bind is the only proof. It has to be a Giggle bind:
+    # A pre-1.2 cage has no metadata, so the bind is the only proof. It has to be a Jiggle bind:
     # another add-on driving its own Wiggy cage through its own Surface Deform must be left alone.
     def binder(name, target, modifier_name):
         ob = bpy.data.objects.new(name, bpy.data.meshes.new(name))
@@ -401,17 +401,17 @@ def test_ownership():
     foreign_bound = mesh_with_wiggy("Other_Addon_Cage")
     foreign_binder = binder("Other_Addon_Body", foreign_bound, "MyAddon_SurfaceDeform")
 
-    giggle_bound = mesh_with_wiggy("Giggle_Bound_Cage")
-    giggle_binder = binder("Giggle_Bound_Body", giggle_bound, "Giggle_Cage_SurfaceDeform")
+    jiggle_bound = mesh_with_wiggy("Jiggle_Bound_Cage")
+    jiggle_binder = binder("Jiggle_Bound_Body", jiggle_bound, "Jiggle_Cage_SurfaceDeform")
 
-    found = g.get_giggle_simulation_objects(ctx)
+    found = g.get_jiggle_simulation_objects(ctx)
     check("a foreign Wiggy cage bound by another add-on is not claimed",
           foreign_bound not in found)
-    check("a legacy cage bound by a Giggle_Cage_ modifier is claimed",
-          giggle_bound in found, [o.name for o in found])
+    check("a legacy cage bound by a Jiggle_Cage_ modifier is claimed",
+          jiggle_bound in found, [o.name for o in found])
 
     for ob in (foreign, owned, legacy, in_collection, proxy, garment, stale_proxy, stale_garment,
-               foreign_bound, foreign_binder, giggle_bound, giggle_binder):
+               foreign_bound, foreign_binder, jiggle_bound, jiggle_binder):
         bpy.data.objects.remove(ob, do_unlink=True)
     bpy.data.collections.remove(collection)
 
@@ -423,16 +423,16 @@ def test_scene_isolation():
 
     other = bpy.data.scenes.new("Other_Scene")
     copy = cage.copy()
-    copy['_giggle_cage'] = True
+    copy['_jiggle_cage'] = True
     other.collection.objects.link(copy)
 
-    found_here = g.get_giggle_simulation_objects(ctx)
+    found_here = g.get_jiggle_simulation_objects(ctx)
     check("cage from another scene is not returned", copy not in found_here)
     check("own scene cage is still returned", cage in found_here)
 
     ctx.window.scene = other
     try:
-        found_there = g.get_giggle_simulation_objects(ctx)
+        found_there = g.get_jiggle_simulation_objects(ctx)
         check("other scene returns its own cage", copy in found_there)
         check("other scene does not return the first scene's cage", cage not in found_there)
     finally:
@@ -483,27 +483,27 @@ def test_clear_cache_keeps_bystander_metadata():
     ctx = bpy.context
     scene = ctx.scene
 
-    if not hasattr(bpy.ops.giggle, 'clear_sim_cache'):
+    if not hasattr(bpy.ops.jiggle, 'clear_sim_cache'):
         print("SKIP clear cache: add-on is not installed in this Blender")
         return
 
     bystander = bpy.data.objects.new("Bystander", bpy.data.meshes.new("Bystander"))
     scene.collection.objects.link(bystander)
-    bystander['_giggle_baked_at_timestamp'] = 123.0
-    bystander['_giggle_bake_fingerprint_json'] = '{"animation": "x"}'
+    bystander['_jiggle_baked_at_timestamp'] = 123.0
+    bystander['_jiggle_bake_fingerprint_json'] = '{"animation": "x"}'
     ctx.view_layer.objects.active = bystander
 
-    bpy.ops.giggle.clear_sim_cache()
+    bpy.ops.jiggle.clear_sim_cache()
 
     check("clear cache leaves an unmanaged active object alone",
-          bystander.get('_giggle_baked_at_timestamp') == 123.0 and
-          bystander.get('_giggle_bake_fingerprint_json') == '{"animation": "x"}')
+          bystander.get('_jiggle_baked_at_timestamp') == 123.0 and
+          bystander.get('_jiggle_bake_fingerprint_json') == '{"animation": "x"}')
     bpy.data.objects.remove(bystander, do_unlink=True)
 
 
 def test_backup_policy():
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    tmpdir = tempfile.mkdtemp(prefix="giggle_backup_test_")
+    tmpdir = tempfile.mkdtemp(prefix="jiggle_backup_test_")
     blend = os.path.join(tmpdir, "backup_case.blend")
     bpy.ops.wm.save_as_mainfile(filepath=blend)
 
@@ -515,16 +515,16 @@ def test_backup_policy():
     # The default is conservative in a background session because bpy.data.is_dirty cannot be
     # trusted there, so an automatic backup must reflect the live session rather than the file.
     auto_first = g.create_project_backup()
-    bpy.context.scene["giggle_bg_marker"] = "background-edit"
+    bpy.context.scene["jiggle_bg_marker"] = "background-edit"
     auto_second = g.create_project_backup()
     check("a background backup does not reuse the saved file", auto_first != auto_second,
           f"{auto_first} vs {auto_second}")
     bpy.ops.wm.open_mainfile(filepath=auto_second)
     check("the background backup holds the live session",
-          bpy.context.scene.get("giggle_bg_marker") == "background-edit")
+          bpy.context.scene.get("jiggle_bg_marker") == "background-edit")
     bpy.ops.wm.open_mainfile(filepath=blend)
 
-    backup_dir = os.path.join(tmpdir, "giggle_backup")
+    backup_dir = os.path.join(tmpdir, "jiggle_backup")
     for i in range(4):
         stale = os.path.join(backup_dir, f"backup_case.blend.2020010{i}_000000.bak")
         with open(stale, "w", encoding="utf-8") as handle:
@@ -540,7 +540,7 @@ def test_backup_policy():
     # explicitly because bpy.data.is_dirty is unreliable headless: it is True for this file only
     # because the POC scene opens dirty, and it stayed False after adding and moving objects in an
     # earlier measurement. The GUI path reads the same flag from bpy.data.is_dirty.
-    bpy.context.scene["giggle_test_marker"] = "dirty-session"
+    bpy.context.scene["jiggle_test_marker"] = "dirty-session"
     dirty_backup = g.create_project_backup(dirty=True)
     check("unsaved edits trigger a new backup", dirty_backup != newest, dirty_backup)
     check("the live file path is unchanged",
@@ -555,15 +555,15 @@ def test_backup_policy():
 
     bpy.ops.wm.open_mainfile(filepath=second_dirty)
     check("the backup holds the unsaved session",
-          bpy.context.scene.get("giggle_test_marker") == "dirty-session")
+          bpy.context.scene.get("jiggle_test_marker") == "dirty-session")
 
 
 def test_disk_cache_snapshot():
     """A .blend backup cannot restore simulation data that lives outside it."""
-    tmpdir = tempfile.mkdtemp(prefix="giggle_disk_cache_")
+    tmpdir = tempfile.mkdtemp(prefix="jiggle_disk_cache_")
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "disk_case.blend"))
 
-    cache = os.path.join(tmpdir, "giggle_cache")
+    cache = os.path.join(tmpdir, "jiggle_cache")
     other_cache = os.path.join(tmpdir, "other_cache")
     for directory, filename, payload in ((cache, "frame.bin", b"old-cache"),
                                          (other_cache, "blob.bin", b"other")):
@@ -588,7 +588,7 @@ def test_disk_cache_snapshot():
           len(g.cage_disk_cache_dirs(_FakeCage([disk, disk]))) == 1,
           g.cage_disk_cache_dirs(_FakeCage([disk, disk])))
 
-    backup_root = os.path.join(tmpdir, "giggle_backup")
+    backup_root = os.path.join(tmpdir, "jiggle_backup")
     ok, message = g.snapshot_disk_cache(_FakeCage([disk]))
     check("the external cache is snapshotted", ok, message)
     snapshots = [n for n in os.listdir(backup_root) if ".cache." in n]
@@ -633,12 +633,12 @@ def test_disk_cache_snapshot():
 
 
 def test_snapshots_with_the_same_basename():
-    """Two caches both called `giggle_cache` must not prune each other."""
-    tmpdir = tempfile.mkdtemp(prefix="giggle_same_name_")
+    """Two caches both called `jiggle_cache` must not prune each other."""
+    tmpdir = tempfile.mkdtemp(prefix="jiggle_same_name_")
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "same_name.blend"))
 
-    first = os.path.join(tmpdir, "character_a", "giggle_cache")
-    second = os.path.join(tmpdir, "character_b", "giggle_cache")
+    first = os.path.join(tmpdir, "character_a", "jiggle_cache")
+    second = os.path.join(tmpdir, "character_b", "jiggle_cache")
     for directory, payload in ((first, b"character-a"), (second, b"character-b")):
         os.makedirs(directory)
         with open(os.path.join(directory, "frame.bin"), "wb") as handle:
@@ -650,7 +650,7 @@ def test_snapshots_with_the_same_basename():
     ok, message = g.snapshot_disk_cache(cage)
     check("both cache directories are snapshotted", ok, message)
 
-    backup_root = os.path.join(tmpdir, "giggle_backup")
+    backup_root = os.path.join(tmpdir, "jiggle_backup")
     snapshots = [n for n in os.listdir(backup_root) if ".cache." in n]
     check("one snapshot per directory is kept", len(snapshots) == 2, snapshots)
 
@@ -669,10 +669,10 @@ def test_snapshots_with_the_same_basename():
 
 
 def test_prepare_cache_replacement():
-    tmpdir = tempfile.mkdtemp(prefix="giggle_replace_")
+    tmpdir = tempfile.mkdtemp(prefix="jiggle_replace_")
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tmpdir, "replace_case.blend"))
 
-    cache = os.path.join(tmpdir, "giggle_cache")
+    cache = os.path.join(tmpdir, "jiggle_cache")
     os.makedirs(cache)
     marker = os.path.join(cache, "keep.bin")
     with open(marker, "wb") as handle:
@@ -712,7 +712,7 @@ def test_prepare_cache_replacement():
 
     ok, message = g.prepare_cache_replacement([cached])
     check("a saved file with a writable cache passes", ok, message)
-    backup_root = os.path.join(tmpdir, "giggle_backup")
+    backup_root = os.path.join(tmpdir, "jiggle_backup")
     baks = [n for n in os.listdir(backup_root) if n.endswith(".bak")] if os.path.isdir(backup_root) else []
     snaps = [n for n in os.listdir(backup_root) if ".cache." in n] if os.path.isdir(backup_root) else []
     check("the .blend is backed up before the replacement", bool(baks), baks)

@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.0.0 — Jiggle Zone rename (breaking identity change)
+
+### Renamed
+- The product is now **Jiggle Zone**. The extension id is `jiggle_zone`, the operator
+  namespace is `jiggle.*`, and stored markers use the `_jiggle_` prefix.
+- The proxies collection is `Jiggle_Proxies` and the runtime collection is
+  `_tmp_Jiggle_SurfaceDeform`.
+- The package folder is `jiggle_zone/` and the release artifact is `jiggle-zone.zip`.
+
+### Upgrading from Giggle 2.x
+- Uninstall **Giggle Soft Body Physics** before enabling Jiggle Zone. The id changed, so the
+  new add-on installs alongside the old one and both can be enabled at once otherwise.
+- Opening a 2.x scene migrates legacy `_giggle_*` markers to `_jiggle_*` and renames the
+  `Giggle_Proxies` collection. Legacy keys are kept, so the same file still opens with 2.1.
+- Keymaps and scripts that call `giggle.*` operators must be rebound to `jiggle.*`.
+
+### Behaviour
+- No simulation behaviour changes. This is the 2.1.0 engine under a new identity.
+
+
 ## 2.1.0 — Cage XPBD workflow and reliable clothing attachment
 
 ### Added

@@ -13,9 +13,9 @@ import sys
 import bpy
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-ZIP = os.path.join(ROOT, "giggle_addon.zip")
-SOURCE = os.path.join(ROOT, "giggle_addon", "__init__.py")
-MANIFEST = os.path.join(ROOT, "giggle_addon", "blender_manifest.toml")
+ZIP = os.path.join(ROOT, "jiggle-zone.zip")
+SOURCE = os.path.join(ROOT, "jiggle_zone", "__init__.py")
+MANIFEST = os.path.join(ROOT, "jiggle_zone", "blender_manifest.toml")
 
 
 def sha256(path):
@@ -59,7 +59,7 @@ def main():
         return 1
 
     installed_dir = os.path.join(bpy.utils.user_resource('EXTENSIONS'),
-                                 "user_default", "giggle_physics")
+                                 "user_default", "jiggle_zone")
     installed = os.path.join(installed_dir, "__init__.py")
     if not os.path.exists(installed):
         print("FAIL installed file missing:", installed)
@@ -87,8 +87,8 @@ def main():
             return 1
 
     # And the add-on must actually be live, not just on disk.
-    if not hasattr(bpy.ops.giggle, "bake_all_cages"):
-        print("FAIL giggle operators are not registered after install")
+    if not hasattr(bpy.ops.jiggle, "bake_all_cages"):
+        print("FAIL jiggle operators are not registered after install")
         return 1
 
     print("PASS clean install matches the source tree and reports version", version)

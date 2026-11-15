@@ -7,7 +7,7 @@
 #   files.txt        changed files with add/remove counts
 #   api.diff         only the changed function and class signatures
 #   summary.txt      git revision, status, hashes, test verdicts
-#   zip-sha.txt      sha256 of giggle_addon.zip and of every entry it contains
+#   zip-sha.txt      sha256 of jiggle-zone.zip and of every entry it contains
 #
 # The diff is the evidence; the summary is only an index into it.
 #
@@ -83,21 +83,21 @@ git -C $root diff --no-color $From $To -- . ':(exclude)*.zip' ':(exclude)*.blend
     Set-Content -Path (Join-Path $out 'change.diff') -Encoding utf8
 git -C $root diff --no-color --numstat $From $To -- . ':(exclude)*.zip' ':(exclude)*.blend' |
     Set-Content -Path (Join-Path $out 'files.txt') -Encoding utf8
-git -C $root diff --no-color -U0 $From $To -- 'giggle_addon/__init__.py' |
+git -C $root diff --no-color -U0 $From $To -- 'jiggle_zone/__init__.py' |
     Select-String -Pattern '^[+-]\s*(def |class )' |
     ForEach-Object { $_.Line } |
     Set-Content -Path (Join-Path $out 'api.diff') -Encoding utf8
 
 # 3. The source the ZIP must contain, checked three ways.
-$sourcePath = Join-Path $root 'giggle_addon\__init__.py'
+$sourcePath = Join-Path $root 'jiggle_zone\__init__.py'
 $sourceHash = Get-Sha256 $sourcePath
 $sourceNormalised = Get-NormalisedHash $sourcePath
 
-$blobFile = Join-Path ([System.IO.Path]::GetTempPath()) ("giggle_blob_{0}.py" -f [guid]::NewGuid().ToString('N'))
+$blobFile = Join-Path ([System.IO.Path]::GetTempPath()) ("jiggle_blob_{0}.py" -f [guid]::NewGuid().ToString('N'))
 try {
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = 'git'
-    $startInfo.Arguments = "-C `"$root`" show `"${To}:giggle_addon/__init__.py`""
+    $startInfo.Arguments = "-C `"$root`" show `"${To}:jiggle_zone/__init__.py`""
     $startInfo.RedirectStandardOutput = $true
     $startInfo.UseShellExecute = $false
     $process = [System.Diagnostics.Process]::Start($startInfo)
@@ -108,7 +108,7 @@ try {
     $blobStream.Dispose()
     if ($process.ExitCode -ne 0) { throw "git show exited $($process.ExitCode)" }
 } catch {
-    Fail "could not read the committed blob for ${To}:giggle_addon/__init__.py ($_)"
+    Fail "could not read the committed blob for ${To}:jiggle_zone/__init__.py ($_)"
 }
 if (-not (Test-Path $blobFile)) {
     $blobHash = 'missing'
@@ -123,9 +123,9 @@ if (-not (Test-Path $blobFile)) {
     }
 }
 
-$zip = Join-Path $root 'giggle_addon.zip'
+$zip = Join-Path $root 'jiggle-zone.zip'
 if (-not (Test-Path $zip)) {
-    Fail "giggle_addon.zip is missing; run tests\repack_zip.py"
+    Fail "jiggle-zone.zip is missing; run tests\repack_zip.py"
     $zipHash = 'missing'
     $entryHash = 'missing'
     $zipEntries = @()
@@ -143,10 +143,10 @@ if (-not (Test-Path $zip)) {
         $hash = ([BitConverter]::ToString(
                 [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)) -replace '-', '')
         $zipEntries.Add(("{0} {1}" -f $hash, $entry.FullName))
-        if ($entry.FullName -eq 'giggle_addon/__init__.py') { $entryHash = $hash }
+        if ($entry.FullName -eq 'jiggle_zone/__init__.py') { $entryHash = $hash }
 
-        $relative = $entry.FullName -replace '^giggle_addon/', ''
-        $onDisk = Join-Path (Join-Path $root 'giggle_addon') ($relative -replace '/', '\')
+        $relative = $entry.FullName -replace '^jiggle_zone/', ''
+        $onDisk = Join-Path (Join-Path $root 'jiggle_zone') ($relative -replace '/', '\')
         if (-not (Test-Path $onDisk)) {
             Fail "zip entry $($entry.FullName) has no file in the source tree"
         } elseif ((Get-NormalisedHash $onDisk) -ne (Get-NormalisedBytesHash $bytes)) {
@@ -164,15 +164,15 @@ if (-not (Test-Path $zip)) {
 $zipEntries | Set-Content -Path (Join-Path $out 'zip-sha.txt') -Encoding utf8
 
 $lines = @(
-    "Giggle review packet $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+    "Jiggle review packet $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
     "range      : $From ($base) .. $To ($rev)",
     "branch     : $branch",
     "working tree: $(if ($dirty) { "DIRTY ($($statusLines.Count) path(s))$(if ($AllowDirty) { ' - allowed' } else { '' })" } else { 'clean' })",
-    "source sha : $sourceHash  (giggle_addon/__init__.py, working copy)",
-    "blob sha   : $blobHash  (${To}:giggle_addon/__init__.py as stored, $blobSize bytes)",
+    "source sha : $sourceHash  (jiggle_zone/__init__.py, working copy)",
+    "blob sha   : $blobHash  (${To}:jiggle_zone/__init__.py as stored, $blobSize bytes)",
     "blob == tree (CRLF collapsed): $blobMatchesTree",
     "zip sha    : $zipHash",
-    "zip entry  : giggle_addon/__init__.py $entryHash",
+    "zip entry  : jiggle_zone/__init__.py $entryHash",
     "zip == tree: every entry checked against the source tree above",
     "",
     "git status --short:"

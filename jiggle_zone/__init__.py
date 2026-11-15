@@ -1,12 +1,12 @@
 bl_info = {
-    "name": "Giggle Soft Body Physics",
-    "author": "VOZHD1122 & RoboDrozd / Giggle",
-    "version": (2, 1, 0),
+    "name": "Jiggle Zone",
+    "author": "VOZHD1122 & RoboDrozd / Jiggle Zone",
+    "version": (3, 0, 0),
     "blender": (5, 2, 0),
-    "location": "3D Viewport > Sidebar > Giggle",
+    "location": "3D Viewport > Sidebar > Jiggle Zone",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",
     "warning": "",
-    "doc_url": "https://github.com/RoboDrozd/wiggy",
+    "doc_url": "https://github.com/Gauji-Boy/Jiggle-Zone",
     "category": "Animation",
 }
 
@@ -2462,7 +2462,7 @@ PRESET_ENUM_ITEMS = get_preset_enum_items(None, None)
 # ==============================================================================
 # ZONE METADATA & RECIPIE HELPERS
 # ==============================================================================
-def set_mod_giggle_metadata(mod, gender, category, preset):
+def set_mod_jiggle_metadata(mod, gender, category, preset):
     """Store zone metadata on parent object ID data."""
     if not mod:
         return
@@ -2475,15 +2475,15 @@ def set_mod_giggle_metadata(mod, gender, category, preset):
         if (not resolved_cat or resolved_cat == 'ALL') and preset in PRESETS:
             resolved_cat = PRESETS[preset].get('category_id', '')
         if gender is not None:
-            obj[f"_giggle_{mod.name}_gender"] = str(gender)
+            obj[f"_jiggle_{mod.name}_gender"] = str(gender)
         if resolved_cat is not None:
-            obj[f"_giggle_{mod.name}_category"] = str(resolved_cat)
+            obj[f"_jiggle_{mod.name}_category"] = str(resolved_cat)
         if preset is not None:
-            obj[f"_giggle_{mod.name}_preset"] = str(preset)
+            obj[f"_jiggle_{mod.name}_preset"] = str(preset)
         clear_mod_customized(mod)
 
-def get_mod_giggle_metadata(mod):
-    """Return (gender, category_id, preset_id) for a Giggle modifier, inferring if needed."""
+def get_mod_jiggle_metadata(mod):
+    """Return (gender, category_id, preset_id) for a Jiggle modifier, inferring if needed."""
     if not mod:
         return None
     obj = getattr(mod, "id_data", None)
@@ -2494,9 +2494,9 @@ def get_mod_giggle_metadata(mod):
     p_cat = None
     p_gender = None
     if obj:
-        p_preset = obj.get(f"_giggle_{mod.name}_preset")
-        p_cat = obj.get(f"_giggle_{mod.name}_category")
-        p_gender = obj.get(f"_giggle_{mod.name}_gender")
+        p_preset = obj.get(f"_jiggle_{mod.name}_preset")
+        p_cat = obj.get(f"_jiggle_{mod.name}_category")
+        p_gender = obj.get(f"_jiggle_{mod.name}_gender")
 
     if p_preset and p_preset in PRESETS:
         data = PRESETS[p_preset]
@@ -2550,9 +2550,9 @@ def get_mod_giggle_metadata(mod):
 def get_zone_recipe_badge(mod):
     """Return concise display name of preset applied to zone."""
     obj = getattr(mod, 'id_data', None) if mod else None
-    if obj and obj.get(f"_giggle_{mod.name}_customized", False):
+    if obj and obj.get(f"_jiggle_{mod.name}_customized", False):
         return "Custom"
-    meta = get_mod_giggle_metadata(mod)
+    meta = get_mod_jiggle_metadata(mod)
     if not meta or not meta[2]:
         return "Custom"
     p_id = meta[2]
@@ -2566,7 +2566,7 @@ def sync_settings_from_zone_mod(settings, mod):
     if not settings or not mod:
         return
     try:
-        meta = get_mod_giggle_metadata(mod)
+        meta = get_mod_jiggle_metadata(mod)
         if not meta:
             return
         p_gender, p_cat, p_preset = meta
@@ -2615,11 +2615,11 @@ def sync_settings_from_zone_mod(settings, mod):
             obj = getattr(bpy.context, "active_object", None)
         if obj:
             try:
-                obj["_giggle_last_synced_mod"] = mod.name
+                obj["_jiggle_last_synced_mod"] = mod.name
             except Exception:
                 pass
     except Exception as e:
-        print(f"[Giggle] Warning: sync_settings_from_zone_mod error: {e}")
+        print(f"[Jiggle] Warning: sync_settings_from_zone_mod error: {e}")
 
 def update_active_zone_index(self, context):
     obj = getattr(context, "active_object", None)
@@ -2630,12 +2630,12 @@ def update_active_zone_index(self, context):
         self.show_create_zone = False
     except Exception:
         pass
-    mods = get_giggle_modifiers(obj)
+    mods = get_jiggle_modifiers(obj)
     idx = self.active_zone_index
     if 0 <= idx < len(mods):
         sync_settings_from_zone_mod(self, mods[idx])
         try:
-            obj["_giggle_last_synced_mod"] = mods[idx].name
+            obj["_jiggle_last_synced_mod"] = mods[idx].name
         except Exception:
             pass
 
@@ -2656,7 +2656,7 @@ def ensure_nodetree(tree_name):
     filename = "Wiggy_0.1.blend" if ("Wiggy" in tree_name or tree_name == "Collider") else "JiggleV2.blend"
     path = get_asset_blend_path(filename)
     if not path or not os.path.exists(path):
-        print(f"[Giggle] Asset file not found: {filename}")
+        print(f"[Jiggle] Asset file not found: {filename}")
         return None
     
     with bpy.data.libraries.load(path, link=False) as (df, dt):
@@ -2769,19 +2769,19 @@ def get_mod_socket_attribute_name(mod, socket_id='Socket_2'):
         pass
     return ""
 
-def is_giggle_modifier(mod):
+def is_jiggle_modifier(mod):
     if mod.type != 'NODES' or not mod.node_group:
         return False
     return (mod.node_group.name in {'Wiggy 0.1', 'Jiggle', 'Jiggle + Deformation'} or
-            mod.name.startswith("Giggle"))
+            mod.name.startswith("Jiggle"))
 
-def get_giggle_modifiers(obj):
+def get_jiggle_modifiers(obj):
     if not obj or obj.type != 'MESH':
         return []
-    return [m for m in obj.modifiers if is_giggle_modifier(m)]
+    return [m for m in obj.modifiers if is_jiggle_modifier(m)]
 
-def position_giggle_modifier(obj, mod):
-    # Wiggy / Giggle should sit immediately after Armature modifiers and preceding Giggle modifiers,
+def position_jiggle_modifier(obj, mod):
+    # Wiggy / Jiggle should sit immediately after Armature modifiers and preceding Jiggle modifiers,
     # and before any Subdivision Surface, Corrective Smooth, or Solidify modifiers.
     mod_names = [m.name for m in obj.modifiers]
     if mod.name not in mod_names:
@@ -2792,7 +2792,7 @@ def position_giggle_modifier(obj, mod):
     for i, m in enumerate(obj.modifiers):
         if m.name == mod.name:
             continue
-        if m.type == 'ARMATURE' or is_giggle_modifier(m):
+        if m.type == 'ARMATURE' or is_jiggle_modifier(m):
             target_idx = i + 1
 
     if target_idx == mod_idx:
@@ -2841,11 +2841,11 @@ def mark_mod_customized(mod):
     obj = getattr(mod, 'id_data', None)
     if obj:
         try:
-            obj[f"_giggle_{mod.name}_customized"] = True
+            obj[f"_jiggle_{mod.name}_customized"] = True
         except Exception:
             pass
         try:
-            obj.pop(f"_giggle_{mod.name}_support_base_json", None)
+            obj.pop(f"_jiggle_{mod.name}_support_base_json", None)
         except Exception:
             pass
     touch_zone_modified(mod)
@@ -2857,23 +2857,23 @@ def clear_mod_customized(mod):
     obj = getattr(mod, 'id_data', None)
     if obj:
         try:
-            obj.pop(f"_giggle_{mod.name}_customized", None)
+            obj.pop(f"_jiggle_{mod.name}_customized", None)
         except Exception:
             pass
         try:
-            obj.pop(f"_giggle_{mod.name}_support_base_json", None)
+            obj.pop(f"_jiggle_{mod.name}_support_base_json", None)
         except Exception:
             pass
 
 
 def _get_active_mod():
-    settings = getattr(bpy.context.scene, "giggle_settings", None)
+    settings = getattr(bpy.context.scene, "jiggle_settings", None)
     idx = settings.active_zone_index if settings else 0
 
     # 1. Check active object first
     obj = bpy.context.active_object
     if obj and obj.type == 'MESH':
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if mods:
             if 0 <= idx < len(mods):
                 return mods[idx]
@@ -2882,16 +2882,16 @@ def _get_active_mod():
     # 2. Check selected objects
     for sel in getattr(bpy.context, 'selected_objects', []):
         if sel and sel.type == 'MESH':
-            mods = get_giggle_modifiers(sel)
+            mods = get_jiggle_modifiers(sel)
             if mods:
                 if 0 <= idx < len(mods):
                     return mods[idx]
                 return mods[0]
 
-    # 3. Fallback to any character mesh in the scene with Giggle modifiers
+    # 3. Fallback to any character mesh in the scene with Jiggle modifiers
     for scn_obj in getattr(bpy.context.scene, 'objects', []):
-        if scn_obj.type == 'MESH' and not scn_obj.get('_giggle_cage') and not scn_obj.name.endswith('_Cage'):
-            mods = get_giggle_modifiers(scn_obj)
+        if scn_obj.type == 'MESH' and not scn_obj.get('_jiggle_cage') and not scn_obj.name.endswith('_Cage'):
+            mods = get_jiggle_modifiers(scn_obj)
             if mods:
                 if 0 <= idx < len(mods):
                     return mods[idx]
@@ -3047,7 +3047,7 @@ def update_new_zone_vg(self, context):
             assign('FEMALE', 'FEMALE_BUTTOCKS', choose('REAL_GLUTES_SOFT', 'STYLE_GLUTES_SOFT'))
         elif any(k in vg_name for k in ['gut', 'gutt', 'belly', 'tummy', 'stomach', 'waist', 'torso', 'midriff', 'flab', 'navel']):
             assign('FEMALE', 'FEMALE_STOMACH', choose('REAL_BELLY_SOFT', 'STYLE_BELLY_SOFT'))
-        elif any(k in vg_name for k in ['breast', 'boob', 'chest', 'cleavage', 'bust', 'tit', 'areola', 'nipple', 'jiggle', 'giggle']):
+        elif any(k in vg_name for k in ['breast', 'boob', 'chest', 'cleavage', 'bust', 'tit', 'areola', 'nipple', 'jiggle']):
             assign('FEMALE', 'FEMALE_CHEST', choose('REAL_BREASTS_NATURAL', 'STYLE_BREASTS_NATURAL'))
         elif any(k in vg_name for k in ['thigh', 'leg', 'quad', 'calf', 'calves']):
             assign('FEMALE', 'FEMALE_LEGS', choose('REAL_THIGHS_INNER', 'STYLE_THIGHS_INNER'))
@@ -3058,18 +3058,18 @@ def update_new_zone_vg(self, context):
         else:
             assign('FEMALE', 'FEMALE_CHEST', choose('REAL_BREASTS_NATURAL', 'STYLE_BREASTS_NATURAL'))
     except Exception as exc:
-        print(f"[Giggle] Could not auto-suggest preset for vertex group '{vg_name}': {exc}")
+        print(f"[Jiggle] Could not auto-suggest preset for vertex group '{vg_name}': {exc}")
 
 def resolve_garment_target_zone(cloth_obj, body_obj, max_dist=0.35, ambiguity_thresh=0.05):
     """
-    Spatially detect the closest Giggle physics zone on body_obj for a specific cloth_obj.
+    Spatially detect the closest Jiggle physics zone on body_obj for a specific cloth_obj.
     Uses geometry-aware surface proximity and character scale awareness.
     Returns: (best_mod, best_vg, best_dist, status_code)
     status_code: 'OK', 'EXCEEDS_DISTANCE', 'AMBIGUOUS', 'NO_ZONES', 'ERROR'
     """
     try:
         from mathutils import Vector
-        mods = get_giggle_modifiers(body_obj)
+        mods = get_jiggle_modifiers(body_obj)
         if not mods:
             return None, None, 999.0, 'NO_ZONES'
 
@@ -3117,19 +3117,19 @@ def resolve_garment_target_zone(cloth_obj, body_obj, max_dist=0.35, ambiguity_th
 
         return best_mod, best_vg, best_dist, 'OK'
     except Exception as exc:
-        print(f"[Giggle] Error resolving garment target zone: {exc}")
+        print(f"[Jiggle] Error resolving garment target zone: {exc}")
         return None, None, 999.0, 'ERROR'
 
 
 def resolve_clothing_target_zone(context):
-    """Detect the spatially closest Giggle physics zone for the active/first selected clothing."""
+    """Detect the spatially closest Jiggle physics zone for the active/first selected clothing."""
     try:
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        giggle_bodies = [o for o in selected_meshes if get_giggle_modifiers(o)]
-        body = context.active_object if context.active_object in giggle_bodies else (giggle_bodies[0] if giggle_bodies else None)
+        jiggle_bodies = [o for o in selected_meshes if get_jiggle_modifiers(o)]
+        body = context.active_object if context.active_object in jiggle_bodies else (jiggle_bodies[0] if jiggle_bodies else None)
         if not body:
             for o in getattr(context.scene, 'objects', []):
-                if o.type == 'MESH' and get_giggle_modifiers(o):
+                if o.type == 'MESH' and get_jiggle_modifiers(o):
                     body = o
                     break
         if not body:
@@ -3137,7 +3137,7 @@ def resolve_clothing_target_zone(context):
 
         clothing_objs = [o for o in selected_meshes if o != body]
         if not clothing_objs:
-            mods = get_giggle_modifiers(body)
+            mods = get_jiggle_modifiers(body)
             if mods:
                 return body, mods[0], get_mod_socket_attribute_name(mods[0], 'Socket_2'), None
             return None, None, None, None
@@ -3155,15 +3155,15 @@ def get_clothing_target_zone_items(self, context):
         return items
     try:
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        giggle_bodies = [o for o in selected_meshes if get_giggle_modifiers(o)]
-        body = context.active_object if context.active_object in giggle_bodies else (giggle_bodies[0] if giggle_bodies else None)
+        jiggle_bodies = [o for o in selected_meshes if get_jiggle_modifiers(o)]
+        body = context.active_object if context.active_object in jiggle_bodies else (jiggle_bodies[0] if jiggle_bodies else None)
         if not body:
             for o in getattr(context.scene, 'objects', []):
-                if o.type == 'MESH' and get_giggle_modifiers(o):
+                if o.type == 'MESH' and get_jiggle_modifiers(o):
                     body = o
                     break
         if body:
-            mods = get_giggle_modifiers(body)
+            mods = get_jiggle_modifiers(body)
             for i, m in enumerate(mods):
                 vg_name = get_mod_socket_attribute_name(m, 'Socket_2') or 'Zone'
                 label = f"{m.name} ({vg_name})"
@@ -3173,7 +3173,7 @@ def get_clothing_target_zone_items(self, context):
     return items
 
 
-class GiggleSceneSettings(PropertyGroup):
+class JiggleSceneSettings(PropertyGroup):
     new_zone_name: StringProperty(
         name="Custom Name (Optional)",
         description="Optional custom name for the zone modifier (defaults to vertex group name if empty)",
@@ -3284,7 +3284,7 @@ class GiggleSceneSettings(PropertyGroup):
         name="Bake Directory",
         description="Directory for external cache files",
         subtype='DIR_PATH',
-        default="//giggle_cache/"
+        default="//jiggle_cache/"
     )
     check_cache_on_render: BoolProperty(
         name="Pre-Flight Render Check",
@@ -3490,8 +3490,8 @@ class GiggleSceneSettings(PropertyGroup):
 # ==============================================================================
 # OPERATORS
 # ==============================================================================
-class GIGGLE_OT_pick_active_vg(Operator):
-    bl_idname = "giggle.pick_active_vg"
+class JIGGLE_OT_pick_active_vg(Operator):
+    bl_idname = "jiggle.pick_active_vg"
     bl_label = "Pick Active Vertex Group"
     bl_description = "Use the vertex group currently selected in Weight Paint mode"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3503,13 +3503,13 @@ class GIGGLE_OT_pick_active_vg(Operator):
 
     def execute(self, context):
         vg = context.active_object.vertex_groups.active
-        context.scene.giggle_settings.new_zone_vg = vg.name
+        context.scene.jiggle_settings.new_zone_vg = vg.name
         self.report({'INFO'}, f"Selected active vertex group: '{vg.name}'")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_create_vg(Operator):
-    bl_idname = "giggle.create_vg"
+class JIGGLE_OT_create_vg(Operator):
+    bl_idname = "jiggle.create_vg"
     bl_label = "New Vertex Group"
     bl_description = "Create a new empty vertex group ready for Weight Painting"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3530,13 +3530,13 @@ class GIGGLE_OT_create_vg(Operator):
 
         vg = obj.vertex_groups.new(name=name)
         obj.vertex_groups.active = vg
-        context.scene.giggle_settings.new_zone_vg = name
+        context.scene.jiggle_settings.new_zone_vg = name
         self.report({'INFO'}, f"Created vertex group '{name}'. Switch to Weight Paint to paint it!")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_duplicate_safe_vg(Operator):
-    bl_idname = "giggle.duplicate_safe_vg"
+class JIGGLE_OT_duplicate_safe_vg(Operator):
+    bl_idname = "jiggle.duplicate_safe_vg"
     bl_label = "Duplicate as Safe Jiggle Group"
     bl_description = "Duplicate this vertex group to a dedicated Jiggle group to avoid breaking bone skinning"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3544,12 +3544,12 @@ class GIGGLE_OT_duplicate_safe_vg(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         return obj and obj.type == 'MESH' and settings.new_zone_vg in obj.vertex_groups
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         source_vg = obj.vertex_groups.get(settings.new_zone_vg)
         
         new_name = f"Wiggy_{source_vg.name}"
@@ -3569,8 +3569,8 @@ class GIGGLE_OT_duplicate_safe_vg(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_add_zone(Operator):
-    bl_idname = "giggle.add_zone"
+class JIGGLE_OT_add_zone(Operator):
+    bl_idname = "jiggle.add_zone"
     bl_label = "Add Jiggle Zone"
     bl_description = "Add a new soft-body jiggle zone modifier to the active mesh"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3581,7 +3581,7 @@ class GIGGLE_OT_add_zone(Operator):
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         original_mode = getattr(obj, 'mode', 'OBJECT')
 
         engine = settings.new_zone_engine
@@ -3608,7 +3608,7 @@ class GIGGLE_OT_add_zone(Operator):
         else:
             zone_name = "Jiggle"
 
-        mod_name = f"Giggle_{zone_name}"
+        mod_name = f"Jiggle_{zone_name}"
 
         # Resolve the requested vertex group before changing the user's object mode.
         actual_vg = None
@@ -3673,7 +3673,7 @@ class GIGGLE_OT_add_zone(Operator):
                         failed_inputs.append(sock_id)
 
             # 4. Position modifier atomically right after Armatures
-            position_giggle_modifier(obj, mod)
+            position_jiggle_modifier(obj, mod)
 
             # 5. Restore viewport on the new modifier
             mod.show_viewport = True
@@ -3693,7 +3693,7 @@ class GIGGLE_OT_add_zone(Operator):
                     bpy.ops.object.mode_set(mode=original_mode)
                 except Exception:
                     pass
-            self.report({'ERROR'}, f"Could not create Giggle zone: {exc}")
+            self.report({'ERROR'}, f"Could not create Jiggle zone: {exc}")
             return {'CANCELLED'}
         finally:
             # Restore every Subdivision setting exactly as it was before zone creation.
@@ -3714,17 +3714,17 @@ class GIGGLE_OT_add_zone(Operator):
             self.report({'WARNING'}, "Zone created, but some preset inputs were unavailable: " + ", ".join(failed_inputs))
 
         # Store zone metadata on parent object for auto-synchronization
-        set_mod_giggle_metadata(mod, settings.new_zone_gender, settings.new_zone_category, settings.new_zone_preset)
+        set_mod_jiggle_metadata(mod, settings.new_zone_gender, settings.new_zone_category, settings.new_zone_preset)
 
         # Clear vertex group picker and auto-collapse Create New Zone
         settings.new_zone_vg = ""
         settings.show_create_zone = False
 
-        giggle_mods = get_giggle_modifiers(obj)
-        if mod in giggle_mods:
-            settings.active_zone_index = giggle_mods.index(mod)
+        jiggle_mods = get_jiggle_modifiers(obj)
+        if mod in jiggle_mods:
+            settings.active_zone_index = jiggle_mods.index(mod)
             sync_settings_from_zone_mod(settings, mod)
-            obj["_giggle_last_synced_mod"] = mod.name
+            obj["_jiggle_last_synced_mod"] = mod.name
 
         # New zones are accelerated to Cage XPBD by default (2.1). A failed bind
         # must not cost the user their zone: keep it full-mesh, remember the
@@ -3738,7 +3738,7 @@ class GIGGLE_OT_add_zone(Operator):
                     selected_objects=[obj],
                     selected_editable_objects=[obj],
                 ):
-                    bpy.ops.giggle.generate_cage('EXEC_DEFAULT')
+                    bpy.ops.jiggle.generate_cage('EXEC_DEFAULT')
             except Exception as exc:
                 cage_error = str(exc)
 
@@ -3764,7 +3764,7 @@ class GIGGLE_OT_add_zone(Operator):
             context.view_layer.update()
         except Exception:
             pass
-        self.report({'INFO'}, f"Added Giggle Zone '{mod.name}' ({engine})")
+        self.report({'INFO'}, f"Added Jiggle Zone '{mod.name}' ({engine})")
         return {'FINISHED'}
 
 
@@ -3778,8 +3778,8 @@ def touch_zone_modified(mod):
     obj = getattr(mod, 'id_data', None)
     if obj:
         try:
-            bake_t = obj.get('_giggle_baked_at_timestamp', 0)
-            obj['_giggle_settings_modified_at'] = max(now, bake_t + 0.001)
+            bake_t = obj.get('_jiggle_baked_at_timestamp', 0)
+            obj['_jiggle_settings_modified_at'] = max(now, bake_t + 0.001)
         except Exception:
             pass
         vg_name = get_mod_socket_attribute_name(mod, 'Socket_2')
@@ -3787,14 +3787,14 @@ def touch_zone_modified(mod):
             cage = get_zone_cage_object(obj, vg_name)
             if cage:
                 try:
-                    c_bake_t = cage.get('_giggle_baked_at_timestamp', 0)
-                    cage['_giggle_settings_modified_at'] = max(now, c_bake_t + 0.001)
+                    c_bake_t = cage.get('_jiggle_baked_at_timestamp', 0)
+                    cage['_jiggle_settings_modified_at'] = max(now, c_bake_t + 0.001)
                 except Exception:
                     pass
-        elif obj.name.endswith('_Cage') or obj.get('_giggle_cage'):
+        elif obj.name.endswith('_Cage') or obj.get('_jiggle_cage'):
             try:
-                bake_t = obj.get('_giggle_baked_at_timestamp', 0)
-                obj['_giggle_settings_modified_at'] = max(now, bake_t + 0.001)
+                bake_t = obj.get('_jiggle_baked_at_timestamp', 0)
+                obj['_jiggle_settings_modified_at'] = max(now, bake_t + 0.001)
             except Exception:
                 pass
 
@@ -3820,7 +3820,7 @@ def get_zone_cage_object(obj, vg_name):
 def get_zone_sd_modifier(obj, vg_name):
     if not obj or not vg_name:
         return None
-    return obj.modifiers.get(f"Giggle_Cage_SD_{vg_name}")
+    return obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
 
 def clean_cage_error_message(message):
     """Normalize an operator/exception message into one readable line."""
@@ -3840,7 +3840,7 @@ def set_zone_cage_error(mod, message):
     obj = getattr(mod, "id_data", None) or bpy.context.active_object
     if not obj:
         return
-    key = f"_giggle_{mod.name}_cage_error"
+    key = f"_jiggle_{mod.name}_cage_error"
     try:
         if message:
             obj[key] = clean_cage_error_message(message)
@@ -3857,7 +3857,7 @@ def get_zone_cage_error(mod):
     if not obj:
         return ""
     try:
-        return str(obj.get(f"_giggle_{mod.name}_cage_error", "") or "")
+        return str(obj.get(f"_jiggle_{mod.name}_cage_error", "") or "")
     except Exception:
         return ""
 
@@ -4020,9 +4020,9 @@ def sanitize_cage_manifold(bm, max_iterations=10):
     }
 
 
-class GIGGLE_OT_generate_cage(Operator):
+class JIGGLE_OT_generate_cage(Operator):
     """Generate an accelerated ~450-vertex simulation cage for the active jiggle zone (5-8x faster evaluation)"""
-    bl_idname = "giggle.generate_cage"
+    bl_idname = "jiggle.generate_cage"
     bl_label = "Generate Simulation Cage"
     bl_description = "Extract and decimate a lightweight proxy cage to accelerate physics while preserving full deformation"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4041,16 +4041,16 @@ class GIGGLE_OT_generate_cage(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None)
-        mods = get_giggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
         return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
 
     def execute(self, context):
         import bmesh
         obj = context.active_object
         scene = context.scene
-        settings = scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         src_mod = mods[idx]
 
@@ -4088,15 +4088,15 @@ class GIGGLE_OT_generate_cage(Operator):
         context.view_layer.update()
 
         # Dedicated collection
-        col = bpy.data.collections.get("Giggle_Cages")
+        col = bpy.data.collections.get("Jiggle_Cages")
         if not col:
-            col = bpy.data.collections.new("Giggle_Cages")
+            col = bpy.data.collections.new("Jiggle_Cages")
             scene.collection.children.link(col)
 
         # Track for ACID Rollback
         created_objects = []
         created_meshes = []
-        old_sd = obj.modifiers.get(f"Giggle_Cage_SD_{vg_name}")
+        old_sd = obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
         old_sd_state = None
         if old_sd:
             old_sd_state = (old_sd.target, old_sd.vertex_group, old_sd.show_viewport)
@@ -4211,7 +4211,7 @@ class GIGGLE_OT_generate_cage(Operator):
                         setattr(c_arm, prop, getattr(arm_mod, prop))
 
             # 6. Add Wiggy 0.1 solver modifier
-            c_wiggy = cage_obj.modifiers.new(f"Giggle_Cage_{vg_name}", 'NODES')
+            c_wiggy = cage_obj.modifiers.new(f"Jiggle_Cage_{vg_name}", 'NODES')
             c_wiggy.node_group = src_mod.node_group
 
             b_props = getattr(src_mod, 'properties', None)
@@ -4244,12 +4244,12 @@ class GIGGLE_OT_generate_cage(Operator):
             cage_obj.add_rest_position_attribute = True
             cage_obj.display_type = 'TEXTURED'
             cage_obj.hide_render = True
-            cage_obj['_giggle_cage'] = True
-            cage_obj['_giggle_source_body'] = obj.name
-            cage_obj['_giggle_vg_name'] = vg_name
+            cage_obj['_jiggle_cage'] = True
+            cage_obj['_jiggle_source_body'] = obj.name
+            cage_obj['_jiggle_vg_name'] = vg_name
 
             # 7. Add Surface Deform to Body
-            sd_name = f"Giggle_Cage_SD_{vg_name}"
+            sd_name = f"Jiggle_Cage_SD_{vg_name}"
             body_sd = obj.modifiers.new(sd_name, 'SURFACE_DEFORM')
             body_sd.target = cage_obj
             body_sd.vertex_group = vg_name
@@ -4283,7 +4283,7 @@ class GIGGLE_OT_generate_cage(Operator):
             clothing_count = 0
             for garment in scene.objects:
                 if garment.type == 'MESH' and garment != obj and garment != cage_obj:
-                    g_sd = garment.modifiers.get(f"Giggle_Cage_SD_{vg_name}") or garment.modifiers.get("Giggle_Cage_SurfaceDeform")
+                    g_sd = garment.modifiers.get(f"Jiggle_Cage_SD_{vg_name}") or garment.modifiers.get("Jiggle_Cage_SurfaceDeform")
                     if g_sd and g_sd.target in {obj, None, existing_cage}:
                         g_sd.target = cage_obj
                         with context.temp_override(active_object=garment, object=garment):
@@ -4305,7 +4305,7 @@ class GIGGLE_OT_generate_cage(Operator):
                     bpy.data.meshes.remove(m, do_unlink=True)
                 except Exception:
                     pass
-            body_sd_cleanup = obj.modifiers.get(f"Giggle_Cage_SD_{vg_name}")
+            body_sd_cleanup = obj.modifiers.get(f"Jiggle_Cage_SD_{vg_name}")
             if body_sd_cleanup:
                 obj.modifiers.remove(body_sd_cleanup)
             src_mod.show_viewport = orig_src_mod_viewport
@@ -4354,9 +4354,9 @@ class GIGGLE_OT_generate_cage(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_toggle_simulation_mode(Operator):
+class JIGGLE_OT_toggle_simulation_mode(Operator):
     """Toggle active zone between Full-Mesh XPBD and accelerated Cage XPBD"""
-    bl_idname = "giggle.toggle_simulation_mode"
+    bl_idname = "jiggle.toggle_simulation_mode"
     bl_label = "Switch Simulation Mode"
     bl_description = "Switch active zone between legacy Full-Mesh XPBD and accelerated Cage XPBD"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4364,14 +4364,14 @@ class GIGGLE_OT_toggle_simulation_mode(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None)
-        mods = get_giggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
         return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         src_mod = mods[idx]
 
@@ -4396,14 +4396,14 @@ class GIGGLE_OT_toggle_simulation_mode(Operator):
             self.report({'INFO'}, f"Switched '{src_mod.name}' to Full-Mesh XPBD (Legacy)")
         else:
             # Accelerate with Cage
-            return bpy.ops.giggle.generate_cage()
+            return bpy.ops.jiggle.generate_cage()
 
         return {'FINISHED'}
 
 
-class GIGGLE_OT_rebuild_cage(Operator):
+class JIGGLE_OT_rebuild_cage(Operator):
     """Rebuild active zone simulation cage from current rest geometry"""
-    bl_idname = "giggle.rebuild_cage"
+    bl_idname = "jiggle.rebuild_cage"
     bl_label = "Rebuild Simulation Cage"
     bl_description = "Regenerate and rebind the proxy cage if mesh geometry or vertex weights changed"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4411,17 +4411,17 @@ class GIGGLE_OT_rebuild_cage(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None)
-        mods = get_giggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
         return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
 
     def execute(self, context):
-        return bpy.ops.giggle.generate_cage()
+        return bpy.ops.jiggle.generate_cage()
 
 
-class GIGGLE_OT_keep_full_mesh(Operator):
+class JIGGLE_OT_keep_full_mesh(Operator):
     """Accept Full-Mesh XPBD for this zone and hide the cage failure notice"""
-    bl_idname = "giggle.keep_full_mesh"
+    bl_idname = "jiggle.keep_full_mesh"
     bl_label = "Keep Full-Mesh XPBD"
     bl_description = "Keep this zone on Full-Mesh XPBD and dismiss the cage binding notice"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4429,14 +4429,14 @@ class GIGGLE_OT_keep_full_mesh(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None)
-        mods = get_giggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
         return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         if not (0 <= idx < len(mods)):
             return {'CANCELLED'}
@@ -4451,8 +4451,8 @@ class GIGGLE_OT_keep_full_mesh(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_remove_zone(Operator):
-    bl_idname = "giggle.remove_zone"
+class JIGGLE_OT_remove_zone(Operator):
+    bl_idname = "jiggle.remove_zone"
     bl_label = "Remove Zone"
     bl_description = "Remove the selected jiggle zone modifier from this object"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4460,25 +4460,25 @@ class GIGGLE_OT_remove_zone(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and get_giggle_modifiers(obj)
+        return obj and get_jiggle_modifiers(obj)
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
 
         if 0 <= idx < len(mods):
             target_mod = mods[idx]
             name = target_mod.name
             # Clean up object ID metadata
-            obj.pop(f"_giggle_{name}_preset", None)
-            obj.pop(f"_giggle_{name}_category", None)
-            obj.pop(f"_giggle_{name}_gender", None)
-            obj.pop(f"_giggle_{name}_customized", None)
-            obj.pop(f"_giggle_{name}_support_base_json", None)
-            obj.pop(f"_giggle_{name}_cage_error", None)
-            obj.pop("_giggle_last_synced_mod", None)
+            obj.pop(f"_jiggle_{name}_preset", None)
+            obj.pop(f"_jiggle_{name}_category", None)
+            obj.pop(f"_jiggle_{name}_gender", None)
+            obj.pop(f"_jiggle_{name}_customized", None)
+            obj.pop(f"_jiggle_{name}_support_base_json", None)
+            obj.pop(f"_jiggle_{name}_cage_error", None)
+            obj.pop("_jiggle_last_synced_mod", None)
             # Clean up associated Cage XPBD proxy and Surface Deform modifier if present
             s_in = getattr(getattr(target_mod, "properties", None), "inputs", None)
             vg_name = getattr(s_in.Socket_2, "attribute_name", "") if (s_in and hasattr(s_in, "Socket_2")) else ""
@@ -4505,8 +4505,8 @@ class GIGGLE_OT_remove_zone(Operator):
 
 
 
-class GIGGLE_OT_apply_support_level(Operator):
-    bl_idname = "giggle.apply_support_level"
+class JIGGLE_OT_apply_support_level(Operator):
+    bl_idname = "jiggle.apply_support_level"
     bl_label = "Apply Support Level"
     bl_description = "Apply a repeatable support profile to the active Wiggy zone"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4527,31 +4527,31 @@ class GIGGLE_OT_apply_support_level(Operator):
         obj = context.active_object
         if not obj:
             return False
-        mods = get_giggle_modifiers(obj)
-        settings = getattr(context.scene, 'giggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
         if not settings or not (0 <= settings.active_zone_index < len(mods)):
             return False
         return bool(mods[settings.active_zone_index].node_group and mods[settings.active_zone_index].node_group.name == 'Wiggy 0.1')
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         if not (0 <= idx < len(mods)):
-            self.report({'ERROR'}, "No active Giggle zone.")
+            self.report({'ERROR'}, "No active Jiggle zone.")
             return {'CANCELLED'}
         mod = mods[idx]
         if not mod.node_group or mod.node_group.name != 'Wiggy 0.1':
             self.report({'ERROR'}, "Support profiles are only available for Wiggy XPBD zones.")
             return {'CANCELLED'}
 
-        meta = get_mod_giggle_metadata(mod)
+        meta = get_mod_jiggle_metadata(mod)
         is_hair = bool(meta and meta[1] == 'PROPS_HAIR')
         base_keys = ('Socket_33', 'Socket_8', 'Socket_123', 'Socket_119', 'Socket_6', 'Socket_30', 'Socket_122', 'Socket_118')
 
         try:
-            saved = obj.get(f"_giggle_{mod.name}_support_base_json")
+            saved = obj.get(f"_jiggle_{mod.name}_support_base_json")
         except Exception:
             saved = None
         base = None
@@ -4561,7 +4561,7 @@ class GIGGLE_OT_apply_support_level(Operator):
             except (TypeError, ValueError):
                 base = None
         if base is None:
-            is_custom = bool(obj.get(f"_giggle_{mod.name}_customized", False))
+            is_custom = bool(obj.get(f"_jiggle_{mod.name}_customized", False))
             preset_id = meta[2] if meta else None
             preset_data = PRESETS.get(preset_id) if preset_id else None
             if preset_data and not is_custom:
@@ -4581,7 +4581,7 @@ class GIGGLE_OT_apply_support_level(Operator):
                 base.setdefault(key, default)
             # Persist the unscaled starting point so repeated clicks are idempotent.
             try:
-                obj[f"_giggle_{mod.name}_support_base_json"] = json.dumps(base)
+                obj[f"_jiggle_{mod.name}_support_base_json"] = json.dumps(base)
             except Exception:
                 pass
 
@@ -4623,7 +4623,7 @@ class GIGGLE_OT_apply_support_level(Operator):
         mark_mod_customized(mod)
         # mark_mod_customized clears the stored baseline; restore it after this operation.
         try:
-            obj[f"_giggle_{mod.name}_support_base_json"] = json.dumps(base)
+            obj[f"_jiggle_{mod.name}_support_base_json"] = json.dumps(base)
         except Exception:
             pass
 
@@ -4635,8 +4635,8 @@ class GIGGLE_OT_apply_support_level(Operator):
             self.report({'INFO'}, f"Applied repeatable '{self.level.title()}' support profile to '{mod.name}'.")
         return {'FINISHED'}
 
-class GIGGLE_OT_apply_preset(Operator):
-    bl_idname = "giggle.apply_preset"
+class JIGGLE_OT_apply_preset(Operator):
+    bl_idname = "jiggle.apply_preset"
     bl_label = "Apply Preset"
     bl_description = "Apply a motion-profile preset to the active Wiggy XPBD zone"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4646,8 +4646,8 @@ class GIGGLE_OT_apply_preset(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None) if context.scene else None
-        mods = get_giggle_modifiers(obj) if obj else []
+        settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
+        mods = get_jiggle_modifiers(obj) if obj else []
         if not settings or not (0 <= settings.active_zone_index < len(mods)):
             return False
         active_mod = mods[settings.active_zone_index]
@@ -4655,8 +4655,8 @@ class GIGGLE_OT_apply_preset(Operator):
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
 
         if not (0 <= idx < len(mods)):
@@ -4671,7 +4671,7 @@ class GIGGLE_OT_apply_preset(Operator):
             self.report({'ERROR'}, "This preset requires the Wiggy XPBD modifier. Legacy Jiggle V2 modifiers cannot use Wiggy recipes.")
             return {'CANCELLED'}
 
-        meta = get_mod_giggle_metadata(mod)
+        meta = get_mod_jiggle_metadata(mod)
         active_cat = meta[1] if meta else preset.get('category_id', '')
         values_to_apply = dict(preset['values'])
         enforce_anatomical_safety(values_to_apply, active_cat)
@@ -4688,15 +4688,15 @@ class GIGGLE_OT_apply_preset(Operator):
         # Store applied recipe metadata on parent object
         p_gender = preset.get('gender', 'FEMALE') if preset else None
         p_cat = preset.get('category_id', '') if preset else None
-        set_mod_giggle_metadata(mod, p_gender, p_cat, self.preset)
+        set_mod_jiggle_metadata(mod, p_gender, p_cat, self.preset)
         touch_zone_modified(mod)
 
         self.report({'INFO'}, f"Applied '{preset['name']}' to '{mod.name}'")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_toggle_mute(Operator):
-    bl_idname = "giggle.toggle_mute"
+class JIGGLE_OT_toggle_mute(Operator):
+    bl_idname = "jiggle.toggle_mute"
     bl_label = "Toggle Zone"
     bl_description = "Enable or disable this zone simulation"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4714,10 +4714,10 @@ class GIGGLE_OT_toggle_mute(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_solo_zone(Operator):
-    bl_idname = "giggle.solo_zone"
+class JIGGLE_OT_solo_zone(Operator):
+    bl_idname = "jiggle.solo_zone"
     bl_label = "Solo Zone"
-    bl_description = "Mute all other Giggle zones and isolate the active one"
+    bl_description = "Mute all other Jiggle zones and isolate the active one"
     bl_options = {'REGISTER', 'UNDO'}
 
     mod_name: StringProperty(name="Modifier Name")
@@ -4726,7 +4726,7 @@ class GIGGLE_OT_solo_zone(Operator):
         obj = context.active_object
         if not obj:
             return {'CANCELLED'}
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         target = obj.modifiers.get(self.mod_name)
         if not target:
             return {'CANCELLED'}
@@ -4745,8 +4745,8 @@ class GIGGLE_OT_solo_zone(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_add_collider(Operator):
-    bl_idname = "giggle.add_collider"
+class JIGGLE_OT_add_collider(Operator):
+    bl_idname = "jiggle.add_collider"
     bl_label = "Set as Collider"
     bl_description = "Configure selected objects as XPBD colliders and connect them to active zone"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4754,8 +4754,8 @@ class GIGGLE_OT_add_collider(Operator):
     @classmethod
     def poll(cls, context):
         active_obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None) if context.scene else None
-        mods = get_giggle_modifiers(active_obj) if active_obj else []
+        settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
+        mods = get_jiggle_modifiers(active_obj) if active_obj else []
         if not (settings and context.selected_objects and len(context.selected_objects) > 1):
             return False
         idx = settings.active_zone_index
@@ -4763,12 +4763,12 @@ class GIGGLE_OT_add_collider(Operator):
 
     def execute(self, context):
         active_obj = context.active_object
-        mods = get_giggle_modifiers(active_obj)
-        settings = context.scene.giggle_settings
+        mods = get_jiggle_modifiers(active_obj)
+        settings = context.scene.jiggle_settings
         idx = settings.active_zone_index
 
         if not (0 <= idx < len(mods)):
-            self.report({'WARNING'}, "No active Giggle zone on the active mesh.")
+            self.report({'WARNING'}, "No active Jiggle zone on the active mesh.")
             return {'CANCELLED'}
 
         mod = mods[idx]
@@ -4781,7 +4781,7 @@ class GIGGLE_OT_add_collider(Operator):
             self.report({'ERROR'}, "Could not load the Collider node group from the bundled asset.")
             return {'CANCELLED'}
 
-        col_name = "Giggle_Colliders"
+        col_name = "Jiggle_Colliders"
         col = bpy.data.collections.get(col_name)
         if not col:
             col = bpy.data.collections.new(col_name)
@@ -4808,8 +4808,8 @@ class GIGGLE_OT_add_collider(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_add_wind(Operator):
-    bl_idname = "giggle.add_wind"
+class JIGGLE_OT_add_wind(Operator):
+    bl_idname = "jiggle.add_wind"
     bl_label = "Add Wind Force Field"
     bl_description = "Create a Geometry Nodes Wind force field and add it to the Colliders collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4820,14 +4820,14 @@ class GIGGLE_OT_add_wind(Operator):
             self.report({'ERROR'}, "Could not load 'Wiggy Wind' node group.")
             return {'CANCELLED'}
 
-        col_name = "Giggle_Colliders"
+        col_name = "Jiggle_Colliders"
         col = bpy.data.collections.get(col_name)
         if not col:
             col = bpy.data.collections.new(col_name)
             context.scene.collection.children.link(col)
 
-        mesh = bpy.data.meshes.new("Giggle_Wind")
-        wind_obj = bpy.data.objects.new("Giggle_Wind", mesh)
+        mesh = bpy.data.meshes.new("Jiggle_Wind")
+        wind_obj = bpy.data.objects.new("Jiggle_Wind", mesh)
         col.objects.link(wind_obj)
         
         mod = wind_obj.modifiers.new(name="Wiggy Wind", type='NODES')
@@ -4839,8 +4839,8 @@ class GIGGLE_OT_add_wind(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_autotune_substeps(Operator):
-    bl_idname = "giggle.autotune_substeps"
+class JIGGLE_OT_autotune_substeps(Operator):
+    bl_idname = "jiggle.autotune_substeps"
     bl_label = "Auto-Tune Substeps for FPS"
     bl_description = "Automatically set Substeps according to scene frame rate (GUIDE [2.9]: 24fps=10, 60fps=4)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4854,11 +4854,11 @@ class GIGGLE_OT_autotune_substeps(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return bool(obj and any(m.node_group and m.node_group.name == "Wiggy 0.1" for m in get_giggle_modifiers(obj)))
+        return bool(obj and any(m.node_group and m.node_group.name == "Wiggy 0.1" for m in get_jiggle_modifiers(obj)))
 
     def execute(self, context):
         obj = context.active_object
-        mods = [m for m in get_giggle_modifiers(obj) if m.node_group and m.node_group.name == "Wiggy 0.1"]
+        mods = [m for m in get_jiggle_modifiers(obj) if m.node_group and m.node_group.name == "Wiggy 0.1"]
         if not mods:
             self.report({'WARNING'}, "No Wiggy XPBD zones found on the active object.")
             return {'CANCELLED'}
@@ -4870,7 +4870,7 @@ class GIGGLE_OT_autotune_substeps(Operator):
         substeps = max(2, min(16, round(240.0 / fps)))
 
         if not self.all_zones:
-            idx = context.scene.giggle_settings.active_zone_index
+            idx = context.scene.jiggle_settings.active_zone_index
             target_mods = [mods[idx]] if 0 <= idx < len(mods) else [mods[0]]
         else:
             target_mods = mods
@@ -4884,8 +4884,8 @@ class GIGGLE_OT_autotune_substeps(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_reset_sim(Operator):
-    bl_idname = "giggle.reset_sim"
+class JIGGLE_OT_reset_sim(Operator):
+    bl_idname = "jiggle.reset_sim"
     bl_label = "Reset Sim to Start"
     bl_description = "Jump to the scene start frame and purge simulation caches"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4936,7 +4936,7 @@ def get_driving_armature(cage_or_mesh):
             return m.object
     if cage_or_mesh.parent and getattr(cage_or_mesh.parent, "type", "") == 'ARMATURE':
         return cage_or_mesh.parent
-    src_body_name = cage_or_mesh.get('_giggle_source_body')
+    src_body_name = cage_or_mesh.get('_jiggle_source_body')
     if src_body_name:
         src_body = bpy.data.objects.get(src_body_name)
         if src_body:
@@ -5082,7 +5082,7 @@ def compute_armature_hash(arm_obj):
 
 
 def compute_physics_hash(cage_obj):
-    """Deterministic hash of Giggle Wiggy GN modifier inputs."""
+    """Deterministic hash of Jiggle Wiggy GN modifier inputs."""
     if not cage_obj:
         return "NO_OBJ"
     mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
@@ -5112,8 +5112,8 @@ def compute_geometry_hash(cage_obj):
     h.update(f"vcount={len(mesh.vertices)};".encode('utf-8'))
     for v in mesh.vertices:
         h.update(f"{v.co.x:.4f},{v.co.y:.4f},{v.co.z:.4f};".encode('utf-8'))
-    src_body_name = cage_obj.get('_giggle_source_body')
-    vg_name = cage_obj.get('_giggle_vg_name')
+    src_body_name = cage_obj.get('_jiggle_source_body')
+    vg_name = cage_obj.get('_jiggle_vg_name')
     if src_body_name and vg_name:
         src_body = bpy.data.objects.get(src_body_name)
         if src_body and src_body.type == 'MESH' and src_body.data:
@@ -5156,18 +5156,18 @@ def save_zone_bake_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_e
     """Stamp verified bake fingerprint and status metadata onto simulation object."""
     now = time.time()
     fp = fp_dict or compute_zone_fingerprint(cage_or_mesh, context, storage_mode, f_start, f_end)
-    cage_or_mesh['_giggle_baked_at_timestamp'] = now
-    cage_or_mesh['_giggle_bake_fingerprint_json'] = json.dumps(fp, sort_keys=True)
-    cage_or_mesh['_giggle_bake_schema_version'] = FINGERPRINT_SCHEMA
-    cage_or_mesh['_giggle_baked_frame_range'] = (f_start, f_end)
-    cage_or_mesh['_giggle_baked_storage'] = storage_mode
-    cage_or_mesh['_giggle_status'] = "BAKED" if is_valid else ("OUTDATED" if "modified" in reason.lower() else "FAILED")
-    cage_or_mesh['_giggle_last_known_valid'] = is_valid
-    cage_or_mesh['_giggle_outdated_reason'] = reason
-    cage_or_mesh.pop('_giggle_settings_modified_at', None)
+    cage_or_mesh['_jiggle_baked_at_timestamp'] = now
+    cage_or_mesh['_jiggle_bake_fingerprint_json'] = json.dumps(fp, sort_keys=True)
+    cage_or_mesh['_jiggle_bake_schema_version'] = FINGERPRINT_SCHEMA
+    cage_or_mesh['_jiggle_baked_frame_range'] = (f_start, f_end)
+    cage_or_mesh['_jiggle_baked_storage'] = storage_mode
+    cage_or_mesh['_jiggle_status'] = "BAKED" if is_valid else ("OUTDATED" if "modified" in reason.lower() else "FAILED")
+    cage_or_mesh['_jiggle_last_known_valid'] = is_valid
+    cage_or_mesh['_jiggle_outdated_reason'] = reason
+    cage_or_mesh.pop('_jiggle_settings_modified_at', None)
 
 
-GIGGLE_CAGE_BIND_PREFIX = "Giggle_Cage_"
+JIGGLE_CAGE_BIND_PREFIX = "Jiggle_Cage_"
 
 
 def get_surface_deform_targets(objects=None):
@@ -5183,10 +5183,10 @@ def get_surface_deform_targets(objects=None):
     return targets
 
 
-def get_giggle_cage_bind_targets(objects=None):
-    """Surface Deform targets driven by a modifier Giggle named.
+def get_jiggle_cage_bind_targets(objects=None):
+    """Surface Deform targets driven by a modifier Jiggle named.
 
-    Only a bind Giggle created counts as ownership proof. A pre-1.2 cage carries no metadata, so
+    Only a bind Jiggle created counts as ownership proof. A pre-1.2 cage carries no metadata, so
     the bind is the only evidence, and another add-on driving its own Wiggy cage through its own
     Surface Deform must not be adopted.
     """
@@ -5197,59 +5197,59 @@ def get_giggle_cage_bind_targets(objects=None):
     for ob in objects:
         for m in ob.modifiers:
             if (m.type == 'SURFACE_DEFORM' and m.target
-                    and m.name.startswith(GIGGLE_CAGE_BIND_PREFIX)):
+                    and m.name.startswith(JIGGLE_CAGE_BIND_PREFIX)):
                 targets.add(m.target)
     return targets
 
 
-def is_giggle_owned_cage(obj, bind_targets=None):
+def is_jiggle_owned_cage(obj, bind_targets=None):
     """True only for cages this add-on created or can prove it drives.
 
-    A mesh that merely ends in '_Cage' or sits in a 'Giggle_Cages' collection belongs to whoever
-    made it. Giggle is a Wiggy fork, so trusting those names let it bake and clear another
+    A mesh that merely ends in '_Cage' or sits in a 'Jiggle_Cages' collection belongs to whoever
+    made it. Jiggle is a Wiggy fork, so trusting those names let it bake and clear another
     add-on's simulation.
     """
     if not obj or obj.type != 'MESH':
         return False
-    # The proxy marker has to win, because builds before this check stamped _giggle_cage onto
-    # clothing proxies. Those proxies carry _giggle_source_body and _giggle_vg_name too, are bound
+    # The proxy marker has to win, because builds before this check stamped _jiggle_cage onto
+    # clothing proxies. Those proxies carry _jiggle_source_body and _jiggle_vg_name too, are bound
     # to garments through Surface Deform, and hold a copy of the body's Wiggy modifier, so a stale
     # flag is enough to make one look like a cage. Clear the flag instead of trusting it.
-    if obj.get('_giggle_proxy'):
-        if obj.get('_giggle_cage'):
-            del obj['_giggle_cage']
+    if obj.get('_jiggle_proxy'):
+        if obj.get('_jiggle_cage'):
+            del obj['_jiggle_cage']
         return False
-    if obj.get('_giggle_cage'):
+    if obj.get('_jiggle_cage'):
         return True
     # 1.2 and 2.0.0 cages always store the source body and vertex group; adopt them once.
-    if obj.get('_giggle_source_body') and obj.get('_giggle_vg_name'):
-        obj['_giggle_cage'] = True
+    if obj.get('_jiggle_source_body') and obj.get('_jiggle_vg_name'):
+        obj['_jiggle_cage'] = True
         return True
     # Cages written before 1.2 carry no metadata at all. The only structural proof is that a body
-    # mesh is bound to them through a Surface Deform modifier Giggle named. This stays a
+    # mesh is bound to them through a Surface Deform modifier Jiggle named. This stays a
     # per-session test: it is not proof enough to write a permanent ownership flag.
     if bind_targets is None:
-        bind_targets = get_giggle_cage_bind_targets()
+        bind_targets = get_jiggle_cage_bind_targets()
     return obj in bind_targets and any(
         m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
         for m in obj.modifiers)
 
 
-def get_giggle_simulation_objects(context, obj=None):
-    """Return Giggle-managed simulation objects in the active scene (cages or a full-mesh zone)."""
+def get_jiggle_simulation_objects(context, obj=None):
+    """Return Jiggle-managed simulation objects in the active scene (cages or a full-mesh zone)."""
     sim_objs = []
     scene = getattr(context, 'scene', None)
     objects = scene.objects if scene is not None else bpy.data.objects
-    bind_targets = get_giggle_cage_bind_targets(objects)
+    bind_targets = get_jiggle_cage_bind_targets(objects)
     for o in objects:
-        if not is_giggle_owned_cage(o, bind_targets):
+        if not is_jiggle_owned_cage(o, bind_targets):
             continue
         if any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in o.modifiers):
             if o not in sim_objs:
                 sim_objs.append(o)
     target = obj or context.active_object
     if target and target.type == 'MESH':
-        full_mods = [m for m in get_giggle_modifiers(target) if m.show_viewport and not is_zone_in_cage_mode(target, m)]
+        full_mods = [m for m in get_jiggle_modifiers(target) if m.show_viewport and not is_zone_in_cage_mode(target, m)]
         if full_mods and target not in sim_objs:
             sim_objs.append(target)
     return sim_objs
@@ -5259,7 +5259,7 @@ def get_cage_bake_status(cage_obj):
     """Fast check of cage bake status for UI display (zero heavy computation during redraw)."""
     if not cage_obj or cage_obj.type != 'MESH':
         return 'NOT_BAKED', (1, 250), 'PACKED', "Object is not a mesh"
-    bake_time = cage_obj.get('_giggle_baked_at_timestamp', None)
+    bake_time = cage_obj.get('_jiggle_baked_at_timestamp', None)
     if not bake_time:
         return 'NOT_BAKED', (1, 250), 'PACKED', "Not baked"
 
@@ -5271,15 +5271,15 @@ def get_cage_bake_status(cage_obj):
     if not has_data:
         return 'NOT_BAKED', (1, 250), 'PACKED', "No simulation cache blocks"
 
-    frange = cage_obj.get('_giggle_baked_frame_range', (1, 250))
-    storage = cage_obj.get('_giggle_baked_storage', 'PACKED')
+    frange = cage_obj.get('_jiggle_baked_frame_range', (1, 250))
+    storage = cage_obj.get('_jiggle_baked_storage', 'PACKED')
 
-    last_mod_time = cage_obj.get('_giggle_settings_modified_at', 0)
+    last_mod_time = cage_obj.get('_jiggle_settings_modified_at', 0)
     if last_mod_time > bake_time:
-        return 'OUTDATED', frange, storage, "Physics settings modified via Giggle UI"
+        return 'OUTDATED', frange, storage, "Physics settings modified via Jiggle UI"
 
-    st = cage_obj.get('_giggle_status', None)
-    reason = cage_obj.get('_giggle_outdated_reason', '')
+    st = cage_obj.get('_jiggle_status', None)
+    reason = cage_obj.get('_jiggle_outdated_reason', '')
     if st in ('BAKED', 'OUTDATED', 'FAILED'):
         return st, frange, storage, reason
 
@@ -5289,7 +5289,7 @@ def get_cage_bake_status(cage_obj):
 def get_requested_bake_config(context):
     """Return (storage_mode, frame_start, frame_end) as requested by the scene settings."""
     scene = context.scene
-    settings = getattr(scene, 'giggle_settings', None)
+    settings = getattr(scene, 'jiggle_settings', None)
     storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
     use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
     if settings is None or use_scene_range:
@@ -5302,60 +5302,60 @@ def check_cage_validity(cage_obj, context):
     if not cage_obj or cage_obj.type != 'MESH':
         return 'NOT_BAKED', "Object is not a mesh"
     
-    bake_time = cage_obj.get('_giggle_baked_at_timestamp', None)
+    bake_time = cage_obj.get('_jiggle_baked_at_timestamp', None)
     if not bake_time:
-        cage_obj['_giggle_status'] = 'NOT_BAKED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "Simulation not baked"
+        cage_obj['_jiggle_status'] = 'NOT_BAKED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = "Simulation not baked"
         return 'NOT_BAKED', "Simulation not baked"
     
     mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
     if not mod or not mod.bakes:
-        cage_obj['_giggle_status'] = 'NOT_BAKED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "Missing Wiggy modifier or bake items"
+        cage_obj['_jiggle_status'] = 'NOT_BAKED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = "Missing Wiggy modifier or bake items"
         return 'NOT_BAKED', "Missing Wiggy modifier or bake items"
     
     has_data = any(len(b.data_blocks) > 0 for b in mod.bakes)
     if not has_data:
-        cage_obj['_giggle_status'] = 'NOT_BAKED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "No simulation cache blocks present"
+        cage_obj['_jiggle_status'] = 'NOT_BAKED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = "No simulation cache blocks present"
         return 'NOT_BAKED', "No simulation cache blocks present"
     
-    fp_json = cage_obj.get('_giggle_bake_fingerprint_json', None)
+    fp_json = cage_obj.get('_jiggle_bake_fingerprint_json', None)
     if not fp_json:
-        if cage_obj.get('_giggle_settings_modified_at', 0) > bake_time:
-            cage_obj['_giggle_status'] = 'OUTDATED'
-            cage_obj['_giggle_last_known_valid'] = False
-            cage_obj['_giggle_outdated_reason'] = "Physics settings modified"
+        if cage_obj.get('_jiggle_settings_modified_at', 0) > bake_time:
+            cage_obj['_jiggle_status'] = 'OUTDATED'
+            cage_obj['_jiggle_last_known_valid'] = False
+            cage_obj['_jiggle_outdated_reason'] = "Physics settings modified"
             return 'OUTDATED', "Physics settings modified"
-        cage_obj['_giggle_status'] = 'OUTDATED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "Missing dependency fingerprint (baked with older version)"
+        cage_obj['_jiggle_status'] = 'OUTDATED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = "Missing dependency fingerprint (baked with older version)"
         return 'OUTDATED', "Missing dependency fingerprint (baked with older version)"
     
     try:
         saved_fp = json.loads(fp_json)
     except Exception:
-        cage_obj['_giggle_status'] = 'OUTDATED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = "Invalid fingerprint JSON"
+        cage_obj['_jiggle_status'] = 'OUTDATED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = "Invalid fingerprint JSON"
         return 'OUTDATED', "Invalid fingerprint JSON"
 
-    saved_schema = cage_obj.get('_giggle_bake_schema_version', None)
+    saved_schema = cage_obj.get('_jiggle_bake_schema_version', None)
     if saved_schema != FINGERPRINT_SCHEMA:
         reason = f"Cache uses fingerprint schema {saved_schema}, expected {FINGERPRINT_SCHEMA}"
-        cage_obj['_giggle_status'] = 'OUTDATED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = reason
+        cage_obj['_jiggle_status'] = 'OUTDATED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = reason
         return 'OUTDATED', reason
 
     # Compare the cache against what the scene asks for now, not against the values stored in the
     # cache. Reading the stored values back on both sides always matched.
     requested_storage, req_start, req_end = get_requested_bake_config(context)
-    stored_range = cage_obj.get('_giggle_baked_frame_range', (req_start, req_end))
-    stored_storage = cage_obj.get('_giggle_baked_storage', requested_storage)
+    stored_range = cage_obj.get('_jiggle_baked_frame_range', (req_start, req_end))
+    stored_storage = cage_obj.get('_jiggle_baked_storage', requested_storage)
     curr_fp = compute_zone_fingerprint(cage_obj, context, requested_storage, req_start, req_end)
     
     status = 'BAKED'
@@ -5378,16 +5378,16 @@ def check_cage_validity(cage_obj, context):
                   f"(cache: {stored_range[0]}-{stored_range[1]} {stored_storage}, "
                   f"requested: {req_start}-{req_end} {requested_storage})")
         
-    cage_obj['_giggle_status'] = status
-    cage_obj['_giggle_last_known_valid'] = (status == 'BAKED')
-    cage_obj['_giggle_outdated_reason'] = reason
+    cage_obj['_jiggle_status'] = status
+    cage_obj['_jiggle_last_known_valid'] = (status == 'BAKED')
+    cage_obj['_jiggle_outdated_reason'] = reason
     return status, reason
 
 
 def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
     """Run pre-bake validation checks before touching existing caches."""
     if not sim_objs:
-        return False, "No active Giggle simulation zones found."
+        return False, "No active Jiggle simulation zones found."
     if storage_mode == 'DISK' and not bpy.data.is_saved:
         return False, "Please save your .blend file before baking to external disk."
     if f_end < f_start:
@@ -5399,7 +5399,7 @@ def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
         for m in o.modifiers:
             if m.type == 'NODES' and m.node_group and m.node_group.name != 'Wiggy 0.1':
                 if any(node.type == 'SIMULATION_OUTPUT' for node in getattr(m.node_group, 'nodes', [])):
-                    return False, f"Conflicting non-Giggle simulation modifier found on '{o.name}'. Aborting to protect unrelated simulations."
+                    return False, f"Conflicting non-Jiggle simulation modifier found on '{o.name}'. Aborting to protect unrelated simulations."
     return True, "Preflight passed"
 
 
@@ -5420,7 +5420,7 @@ def create_project_backup(keep=BACKUP_KEEP, dirty=None):
         filepath = bpy.data.filepath
         if not filepath or not os.path.exists(filepath):
             return None
-        backup_dir = os.path.join(os.path.dirname(filepath), "giggle_backup")
+        backup_dir = os.path.join(os.path.dirname(filepath), "jiggle_backup")
         os.makedirs(backup_dir, exist_ok=True)
         basename = os.path.basename(filepath)
         prefix = f"{basename}."
@@ -5467,7 +5467,7 @@ def create_project_backup(keep=BACKUP_KEEP, dirty=None):
                 pass
         return newest
     except Exception as e:
-        print(f"[Giggle Backup Warning] Could not create backup copy: {e}")
+        print(f"[Jiggle Backup Warning] Could not create backup copy: {e}")
         return None
 
 
@@ -5509,8 +5509,8 @@ def snapshot_disk_cache(cage_obj, keep=CACHE_BACKUP_KEEP):
         return True, ""
     filepath = bpy.data.filepath
     if not filepath:
-        return False, "Save the .blend first: Giggle cannot store an external cache snapshot."
-    backup_root = os.path.join(os.path.dirname(filepath), "giggle_backup")
+        return False, "Save the .blend first: Jiggle cannot store an external cache snapshot."
+    backup_root = os.path.join(os.path.dirname(filepath), "jiggle_backup")
     try:
         os.makedirs(backup_root, exist_ok=True)
     except Exception as e:
@@ -5519,7 +5519,7 @@ def snapshot_disk_cache(cage_obj, keep=CACHE_BACKUP_KEEP):
     stamp = time.strftime("%Y%m%d_%H%M%S")
     for source in dirs:
         name = os.path.basename(os.path.normpath(source)) or "cache"
-        # Two caches can share a basename (`/a/giggle_cache` and `/b/giggle_cache`). Pruning by
+        # Two caches can share a basename (`/a/jiggle_cache` and `/b/jiggle_cache`). Pruning by
         # name alone made one snapshot delete the other, so the full path is part of the label.
         digest = hashlib.sha1(
             os.path.normcase(os.path.abspath(source)).encode("utf-8")).hexdigest()[:8]
@@ -5543,7 +5543,7 @@ def snapshot_disk_cache(cage_obj, keep=CACHE_BACKUP_KEEP):
                 shutil.rmtree(old)
             except OSError:
                 pass
-        print(f"[Giggle Backup] External cache snapshot: {target}")
+        print(f"[Jiggle Backup] External cache snapshot: {target}")
     return True, ""
 
 
@@ -5558,13 +5558,13 @@ def prepare_cache_replacement(targets):
         return True, ""
 
     if not bpy.data.is_saved:
-        return False, ("Save the .blend first: Giggle needs a recovery copy before replacing "
+        return False, ("Save the .blend first: Jiggle needs a recovery copy before replacing "
                        "an existing simulation cache.")
 
     path = create_project_backup()
     if not path:
         return False, "Could not create the project backup; the existing cache was left alone."
-    print(f"[Giggle Backup] Project backup created at: {path}")
+    print(f"[Jiggle Backup] Project backup created at: {path}")
 
     for cage in replacing:
         ok, message = snapshot_disk_cache(cage)
@@ -5580,11 +5580,11 @@ def backup_before_replacing_cache(targets):
 
 def mark_bake_failure(cage_obj, message, had_cache):
     """Record a failed bake without throwing away the status of a cache that is still there."""
-    cage_obj['_giggle_last_bake_error'] = message
+    cage_obj['_jiggle_last_bake_error'] = message
     if not had_cache:
-        cage_obj['_giggle_status'] = 'FAILED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = message
+        cage_obj['_jiggle_status'] = 'FAILED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = message
 
 
 def run_bake_operator(context, cage_obj):
@@ -5605,12 +5605,12 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
     working cache untouched.
 
     This is not transactional: if Blender overwrites the cache and then fails, the previous
-    cache is gone and only `giggle_backup/` can restore it.
+    cache is gone and only `jiggle_backup/` can restore it.
     """
     mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
     if not mod:
         msg = "Missing Wiggy 0.1 simulation modifier"
-        cage_obj['_giggle_last_bake_error'] = msg
+        cage_obj['_jiggle_last_bake_error'] = msg
         return False, msg
 
     pre_fp = compute_zone_fingerprint(cage_obj, context, storage_mode, f_start, f_end)
@@ -5656,38 +5656,38 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
         msg = "Dependencies modified during baking"
         save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=False, reason=msg)
         mark_bake_failure(cage_obj, msg, had_cache)
-        cage_obj['_giggle_status'] = 'OUTDATED'
-        cage_obj['_giggle_last_known_valid'] = False
-        cage_obj['_giggle_outdated_reason'] = msg
+        cage_obj['_jiggle_status'] = 'OUTDATED'
+        cage_obj['_jiggle_last_known_valid'] = False
+        cage_obj['_jiggle_outdated_reason'] = msg
         return False, msg
 
-    cage_obj.pop('_giggle_last_bake_error', None)
+    cage_obj.pop('_jiggle_last_bake_error', None)
     save_zone_bake_fingerprint(cage_obj, context, storage_mode, f_start, f_end, fp_dict=post_fp, is_valid=True, reason="")
     return True, "Success"
 
 
-class GIGGLE_OT_bake_all_cages(Operator):
-    """Bake simulation caches for all active Giggle cages (or active full-mesh zones)"""
-    bl_idname = "giggle.bake_all_cages"
-    bl_label = "Bake All Giggle Zones"
-    bl_description = "Bake every active Giggle physics simulation for non-sequential, instantaneous playback"
+class JIGGLE_OT_bake_all_cages(Operator):
+    """Bake simulation caches for all active Jiggle cages (or active full-mesh zones)"""
+    bl_idname = "jiggle.bake_all_cages"
+    bl_label = "Bake All Jiggle Zones"
+    bl_description = "Bake every active Jiggle physics simulation for non-sequential, instantaneous playback"
     bl_options = {'REGISTER'}
 
     @classmethod
     def poll(cls, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         return bool(sim_objs)
 
     def execute(self, context):
         scene = context.scene
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
         use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
-        disk_path = getattr(settings, 'bake_disk_path', '//giggle_cache/') if settings else '//giggle_cache/'
+        disk_path = getattr(settings, 'bake_disk_path', '//jiggle_cache/') if settings else '//jiggle_cache/'
         f_start = scene.frame_start if use_scene_range else settings.bake_frame_start
         f_end = scene.frame_end if use_scene_range else settings.bake_frame_end
 
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         ok, msg = preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end)
         if not ok:
             self.report({'ERROR'}, msg)
@@ -5721,7 +5721,7 @@ class GIGGLE_OT_bake_all_cages(Operator):
                 self.report({'WARNING'}, f"Baked {len(succeeded)} zone(s), but failed for: {names}")
                 return {'FINISHED'}
 
-            self.report({'INFO'}, f"Successfully baked all {len(succeeded)} Giggle simulation zone(s) (Frames {f_start}-{f_end}, {storage_mode})")
+            self.report({'INFO'}, f"Successfully baked all {len(succeeded)} Jiggle simulation zone(s) (Frames {f_start}-{f_end}, {storage_mode})")
             return {'FINISHED'}
 
         except Exception as exc:
@@ -5745,25 +5745,25 @@ class GIGGLE_OT_bake_all_cages(Operator):
             context.view_layer.update()
 
 
-class GIGGLE_OT_bake_selected_cage(Operator):
-    """Bake simulation cache for the active Giggle zone only"""
-    bl_idname = "giggle.bake_selected_cage"
+class JIGGLE_OT_bake_selected_cage(Operator):
+    """Bake simulation cache for the active Jiggle zone only"""
+    bl_idname = "jiggle.bake_selected_cage"
     bl_label = "Bake Active Zone"
-    bl_description = "Bake only the active Giggle simulation cage"
+    bl_description = "Bake only the active Jiggle simulation cage"
     bl_options = {'REGISTER'}
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None)
-        mods = get_giggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None)
+        mods = get_jiggle_modifiers(obj)
         return bool(obj and obj.type == 'MESH' and settings and 0 <= settings.active_zone_index < len(mods))
 
     def execute(self, context):
         scene = context.scene
         obj = context.active_object
-        settings = scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         active_mod = mods[idx]
 
@@ -5822,11 +5822,11 @@ class GIGGLE_OT_bake_selected_cage(Operator):
             context.view_layer.update()
 
 
-class GIGGLE_OT_rebake_all(Operator):
-    """Safely invalidate and rebuild every Giggle-managed simulation cache with transactional verification"""
-    bl_idname = "giggle.rebake_all"
-    bl_label = "Rebake All Giggle Zones"
-    bl_description = "Safely purge and recalculate all Giggle physics simulation caches"
+class JIGGLE_OT_rebake_all(Operator):
+    """Safely invalidate and rebuild every Jiggle-managed simulation cache with transactional verification"""
+    bl_idname = "jiggle.rebake_all"
+    bl_label = "Rebake All Jiggle Zones"
+    bl_description = "Safely purge and recalculate all Jiggle physics simulation caches"
     bl_options = {'REGISTER'}
 
     confirm: BoolProperty(
@@ -5837,17 +5837,17 @@ class GIGGLE_OT_rebake_all(Operator):
 
     @classmethod
     def poll(cls, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         return bool(sim_objs)
 
     def invoke(self, context, event):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         if not sim_objs:
-            self.report({'WARNING'}, "No active Giggle simulation zones found to rebake.")
+            self.report({'WARNING'}, "No active Jiggle simulation zones found to rebake.")
             return {'CANCELLED'}
 
         has_existing = any(
-            o.get('_giggle_baked_at_timestamp') or any(len(b.data_blocks) > 0 for m in o.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for b in m.bakes)
+            o.get('_jiggle_baked_at_timestamp') or any(len(b.data_blocks) > 0 for m in o.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for b in m.bakes)
             for o in sim_objs
         )
         if has_existing and event is not None:
@@ -5856,7 +5856,7 @@ class GIGGLE_OT_rebake_all(Operator):
 
     def draw(self, context):
         layout = self.layout
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         box = layout.box()
         box.alert = True
         box.label(text="Confirm Rebake All: Existing caches will be replaced!", icon='ERROR')
@@ -5869,7 +5869,7 @@ class GIGGLE_OT_rebake_all(Operator):
             row.label(text=f"Status: {st}")
 
         scene = context.scene
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
         use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
         f_start = scene.frame_start if use_scene_range else settings.bake_frame_start
@@ -5880,14 +5880,14 @@ class GIGGLE_OT_rebake_all(Operator):
 
     def execute(self, context):
         scene = context.scene
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
         use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
-        disk_path = getattr(settings, 'bake_disk_path', '//giggle_cache/') if settings else '//giggle_cache/'
+        disk_path = getattr(settings, 'bake_disk_path', '//jiggle_cache/') if settings else '//jiggle_cache/'
         f_start = scene.frame_start if use_scene_range else settings.bake_frame_start
         f_end = scene.frame_end if use_scene_range else settings.bake_frame_end
 
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         ok, msg = preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end)
         if not ok:
             self.report({'ERROR'}, msg)
@@ -5921,7 +5921,7 @@ class GIGGLE_OT_rebake_all(Operator):
                 self.report({'WARNING'}, f"Rebaked {len(succeeded)} zone(s), but failed for: {names}")
                 return {'FINISHED'}
 
-            self.report({'INFO'}, f"Successfully rebaked all {len(succeeded)} Giggle simulation zone(s) (Frames {f_start}-{f_end}, {storage_mode})")
+            self.report({'INFO'}, f"Successfully rebaked all {len(succeeded)} Jiggle simulation zone(s) (Frames {f_start}-{f_end}, {storage_mode})")
             return {'FINISHED'}
 
         except Exception as exc:
@@ -5945,39 +5945,39 @@ class GIGGLE_OT_rebake_all(Operator):
             context.view_layer.update()
 
 
-class GIGGLE_OT_rebake_sim(Operator):
-    """Safely invalidate and rebake all Giggle simulation zones (alias for giggle.rebake_all)"""
-    bl_idname = "giggle.rebake_sim"
+class JIGGLE_OT_rebake_sim(Operator):
+    """Safely invalidate and rebake all Jiggle simulation zones (alias for jiggle.rebake_all)"""
+    bl_idname = "jiggle.rebake_sim"
     bl_label = "Rebake All Zones"
     bl_description = "Safely purge existing simulation caches and rebake with current physics settings"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        return bpy.ops.giggle.rebake_all()
+        return bpy.ops.jiggle.rebake_all()
 
 
-class GIGGLE_OT_bake_missing(Operator):
+class JIGGLE_OT_bake_missing(Operator):
     """Bake only unbaked or outdated simulation caches, skipping valid ones"""
-    bl_idname = "giggle.bake_missing"
+    bl_idname = "jiggle.bake_missing"
     bl_label = "Bake Missing / Outdated"
-    bl_description = "Recalculate simulation caches only for unbaked or outdated Giggle zones"
+    bl_description = "Recalculate simulation caches only for unbaked or outdated Jiggle zones"
     bl_options = {'REGISTER'}
 
     @classmethod
     def poll(cls, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         return bool(sim_objs)
 
     def execute(self, context):
         scene = context.scene
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         storage_mode = getattr(settings, 'bake_storage_mode', 'PACKED') if settings else 'PACKED'
         use_scene_range = getattr(settings, 'bake_use_scene_range', True) if settings else True
-        disk_path = getattr(settings, 'bake_disk_path', '//giggle_cache/') if settings else '//giggle_cache/'
+        disk_path = getattr(settings, 'bake_disk_path', '//jiggle_cache/') if settings else '//jiggle_cache/'
         f_start = scene.frame_start if use_scene_range else settings.bake_frame_start
         f_end = scene.frame_end if use_scene_range else settings.bake_frame_end
 
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         ok, msg = preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end)
         if not ok:
             self.report({'ERROR'}, msg)
@@ -5991,7 +5991,7 @@ class GIGGLE_OT_bake_missing(Operator):
                 targets.append(o)
 
         if not targets:
-            self.report({'INFO'}, "All Giggle simulation caches are already baked and up to date.")
+            self.report({'INFO'}, "All Jiggle simulation caches are already baked and up to date.")
             return {'FINISHED'}
 
         ok_backup, backup_msg = prepare_cache_replacement(targets)
@@ -6022,7 +6022,7 @@ class GIGGLE_OT_bake_missing(Operator):
                 self.report({'WARNING'}, f"Baked {len(succeeded)} missing zone(s), but failed for: {names}")
                 return {'FINISHED'}
 
-            self.report({'INFO'}, f"Successfully baked {len(succeeded)} missing/outdated Giggle zone(s) (Frames {f_start}-{f_end})")
+            self.report({'INFO'}, f"Successfully baked {len(succeeded)} missing/outdated Jiggle zone(s) (Frames {f_start}-{f_end})")
             return {'FINISHED'}
 
         except Exception as exc:
@@ -6046,20 +6046,20 @@ class GIGGLE_OT_bake_missing(Operator):
             context.view_layer.update()
 
 
-class GIGGLE_OT_check_cache_validity(Operator):
+class JIGGLE_OT_check_cache_validity(Operator):
     """Verify whether simulation caches match current animation keyframes, rig transforms, and physics settings"""
-    bl_idname = "giggle.check_cache_validity"
+    bl_idname = "jiggle.check_cache_validity"
     bl_label = "Check Cache Validity"
     bl_description = "Recalculate dependency fingerprints to verify whether simulation caches match the current scene"
     bl_options = {'REGISTER'}
 
     @classmethod
     def poll(cls, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         return bool(sim_objs)
 
     def execute(self, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         valid_cages = []
         outdated_cages = []
         unbaked_cages = []
@@ -6079,40 +6079,40 @@ class GIGGLE_OT_check_cache_validity(Operator):
         elif unbaked_cages:
             self.report({'INFO'}, f"{len(valid_cages)} cage(s) match setup, {len(unbaked_cages)} unbaked.")
         else:
-            self.report({'INFO'}, f"All {len(valid_cages)} Giggle simulation cache(s) match scene dependencies.")
+            self.report({'INFO'}, f"All {len(valid_cages)} Jiggle simulation cache(s) match scene dependencies.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_mark_cache_outdated(Operator):
-    """Manually mark Giggle simulation caches as outdated"""
-    bl_idname = "giggle.mark_cache_outdated"
+class JIGGLE_OT_mark_cache_outdated(Operator):
+    """Manually mark Jiggle simulation caches as outdated"""
+    bl_idname = "jiggle.mark_cache_outdated"
     bl_label = "Mark Cache Outdated"
-    bl_description = "Manually mark Giggle simulation caches as outdated to force recalculation"
+    bl_description = "Manually mark Jiggle simulation caches as outdated to force recalculation"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         for o in sim_objs:
-            o['_giggle_status'] = 'OUTDATED'
-            o['_giggle_last_known_valid'] = False
-            o['_giggle_outdated_reason'] = "Manually marked outdated by user"
+            o['_jiggle_status'] = 'OUTDATED'
+            o['_jiggle_last_known_valid'] = False
+            o['_jiggle_outdated_reason'] = "Manually marked outdated by user"
             o.update_tag(refresh={'DATA'})
-        self.report({'INFO'}, f"Marked {len(sim_objs)} Giggle simulation cache(s) as outdated.")
+        self.report({'INFO'}, f"Marked {len(sim_objs)} Jiggle simulation cache(s) as outdated.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_clear_sim_cache(Operator):
-    bl_idname = "giggle.clear_sim_cache"
-    bl_label = "Clear Giggle Cache"
-    bl_description = "Purge Geometry Nodes simulation caches strictly on Giggle-managed simulation cages"
+class JIGGLE_OT_clear_sim_cache(Operator):
+    bl_idname = "jiggle.clear_sim_cache"
+    bl_label = "Clear Jiggle Cache"
+    bl_description = "Purge Geometry Nodes simulation caches strictly on Jiggle-managed simulation cages"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         count = 0
         failed_objs = []
-        sim_objs = get_giggle_simulation_objects(context)
+        sim_objs = get_jiggle_simulation_objects(context)
         if not sim_objs:
-            self.report({'INFO'}, "No active Giggle simulation caches found to clear.")
+            self.report({'INFO'}, "No active Jiggle simulation caches found to clear.")
             return {'FINISHED'}
 
         for obj in sim_objs:
@@ -6120,15 +6120,15 @@ class GIGGLE_OT_clear_sim_cache(Operator):
                 with context.temp_override(active_object=obj, selected_objects=[obj]):
                     del_res = bpy.ops.object.simulation_nodes_cache_delete(selected=True)
                 if del_res == {'FINISHED'}:
-                    obj.pop('_giggle_baked_at_timestamp', None)
-                    obj.pop('_giggle_bake_fingerprint_json', None)
-                    obj.pop('_giggle_bake_schema_version', None)
-                    obj.pop('_giggle_baked_frame_range', None)
-                    obj.pop('_giggle_baked_storage', None)
-                    obj.pop('_giggle_settings_modified_at', None)
-                    obj['_giggle_status'] = 'NOT_BAKED'
-                    obj['_giggle_last_known_valid'] = False
-                    obj['_giggle_outdated_reason'] = "Cache cleared"
+                    obj.pop('_jiggle_baked_at_timestamp', None)
+                    obj.pop('_jiggle_bake_fingerprint_json', None)
+                    obj.pop('_jiggle_bake_schema_version', None)
+                    obj.pop('_jiggle_baked_frame_range', None)
+                    obj.pop('_jiggle_baked_storage', None)
+                    obj.pop('_jiggle_settings_modified_at', None)
+                    obj['_jiggle_status'] = 'NOT_BAKED'
+                    obj['_jiggle_last_known_valid'] = False
+                    obj['_jiggle_outdated_reason'] = "Cache cleared"
                     obj.update_tag(refresh={'DATA'})
                     count += 1
                 else:
@@ -6145,12 +6145,12 @@ class GIGGLE_OT_clear_sim_cache(Operator):
             self.report({'WARNING'}, f"Purged cache on {count} object(s), but failed for: {', '.join(failed_objs)}")
             return {'FINISHED'}
 
-        self.report({'INFO'}, f"Purged Giggle simulation cache on {count} object(s). Unrelated simulations preserved.")
+        self.report({'INFO'}, f"Purged Jiggle simulation cache on {count} object(s). Unrelated simulations preserved.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_fix_gpu_subdivision(Operator):
-    bl_idname = "giggle.fix_gpu_subdivision"
+class JIGGLE_OT_fix_gpu_subdivision(Operator):
+    bl_idname = "jiggle.fix_gpu_subdivision"
     bl_label = "Disable GPU Subdivision"
     bl_description = "Disable GPU Subdivision in Preferences to prevent OpenSubdiv memory crashes on complex models"
     bl_options = {'REGISTER', 'UNDO'}
@@ -6164,8 +6164,8 @@ class GIGGLE_OT_fix_gpu_subdivision(Operator):
         return {'CANCELLED'}
 
 
-class GIGGLE_OT_clamp_subdivision(Operator):
-    bl_idname = "giggle.clamp_subdivision"
+class JIGGLE_OT_clamp_subdivision(Operator):
+    bl_idname = "jiggle.clamp_subdivision"
     bl_label = "Optimize Subsurf Levels"
     bl_description = "Lower Subdivision Surface viewport levels to 1 to prevent simulation stutter and OpenSubdiv memory crashes"
     bl_options = {'REGISTER', 'UNDO'}
@@ -6186,15 +6186,15 @@ class GIGGLE_OT_clamp_subdivision(Operator):
 # ==============================================================================
 # UI PANELS
 # ==============================================================================
-class VIEW3D_PT_giggle_base:
+class VIEW3D_PT_jiggle_base:
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Giggle"
+    bl_category = "Jiggle"
 
 
-class GIGGLE_OT_select_zone(Operator):
+class JIGGLE_OT_select_zone(Operator):
     """Select a jiggle zone and synchronize preset dropdowns"""
-    bl_idname = "giggle.select_zone"
+    bl_idname = "jiggle.select_zone"
     bl_label = "Select Zone"
     bl_description = "Select this jiggle zone and sync presets"
     bl_options = {'INTERNAL', 'UNDO'}
@@ -6202,50 +6202,50 @@ class GIGGLE_OT_select_zone(Operator):
     index: IntProperty(name="Zone Index", default=0)
 
     def execute(self, context):
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         settings.active_zone_index = self.index
         settings.show_create_zone = False
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if 0 <= self.index < len(mods):
             sync_settings_from_zone_mod(settings, mods[self.index])
             try:
-                obj["_giggle_last_synced_mod"] = mods[self.index].name
+                obj["_jiggle_last_synced_mod"] = mods[self.index].name
             except Exception:
                 pass
         return {'FINISHED'}
 
 
-class GIGGLE_OT_sync_active_zone(Operator):
+class JIGGLE_OT_sync_active_zone(Operator):
     """Synchronize preset category and choice to the active zone recipe"""
-    bl_idname = "giggle.sync_active_zone"
+    bl_idname = "jiggle.sync_active_zone"
     bl_label = "Sync to Active Zone"
     bl_description = "Synchronize preset dropdowns to the active jiggle zone recipe"
     bl_options = {'INTERNAL', 'UNDO'}
 
     def execute(self, context):
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         if 0 <= idx < len(mods):
             sync_settings_from_zone_mod(settings, mods[idx])
             self.report({'INFO'}, f"Synced preset to '{mods[idx].name}'")
         return {'FINISHED'}
 
-class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_main"
-    bl_label = "Giggle Physics"
+class VIEW3D_PT_jiggle_main(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_main"
+    bl_label = "Jiggle Physics"
 
     def draw(self, context):
         layout = self.layout
         obj = context.active_object
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
 
         if not obj or obj.type != 'MESH':
             box_empty = layout.box()
             box_empty.label(text="Select a Mesh Object to begin", icon='MESH_DATA')
-            box_empty.operator("giggle.select_body_mesh", text="Select Character Body", icon='RESTRICT_SELECT_OFF')
+            box_empty.operator("jiggle.select_body_mesh", text="Select Character Body", icon='RESTRICT_SELECT_OFF')
             return
 
         # Check for GPU Subdivision bug in Blender 5.3 Beta
@@ -6255,28 +6255,28 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
             sub_box.alert = True
             sub_box.label(text="GPU Subdivision is Active (Blender 5.3)", icon='ERROR')
             sub_box.label(text="Can crash OpenSubdiv on detailed meshes.")
-            sub_box.operator("giggle.fix_gpu_subdivision", text="Disable GPU Subdivision (Fix)", icon='CHECKMARK')
+            sub_box.operator("jiggle.fix_gpu_subdivision", text="Disable GPU Subdivision (Fix)", icon='CHECKMARK')
 
         # Check for high Subdivision levels on this mesh
         high_subsurfs = [m for m in obj.modifiers if m.type == 'SUBSURF' and m.levels > 1]
         if high_subsurfs:
             h_box = layout.box()
             h_box.label(text=f"Subdiv Viewport Level is {high_subsurfs[0].levels} (High)", icon='INFO')
-            h_box.operator("giggle.clamp_subdivision", text="Optimize Viewport Subdiv to 1", icon='MOD_SUBSURF')
+            h_box.operator("jiggle.clamp_subdivision", text="Optimize Viewport Subdiv to 1", icon='MOD_SUBSURF')
 
         box = layout.box()
         box.label(text=f"Object: {obj.name}", icon='OBJECT_DATA')
 
         # Existing Zones List
-        giggle_mods = get_giggle_modifiers(obj)
-        if giggle_mods:
+        jiggle_mods = get_jiggle_modifiers(obj)
+        if jiggle_mods:
             box.label(text="Active Jiggle Zones:", icon='MOD_PHYSICS')
-            for i, m in enumerate(giggle_mods):
+            for i, m in enumerate(jiggle_mods):
                 row = box.row(align=True)
                 is_active = (i == settings.active_zone_index)
                 
                 icon = 'RADIOBUT_ON' if is_active else 'RADIOBUT_OFF'
-                op_select = row.operator("giggle.select_zone", text=m.name, icon=icon)
+                op_select = row.operator("jiggle.select_zone", text=m.name, icon=icon)
                 op_select.index = i
 
                 # Compact recipe badge pill
@@ -6289,16 +6289,16 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                 mode_cell.label(text=zone_mode_label(obj, m))
 
                 eye_icon = 'HIDE_OFF' if m.show_viewport else 'HIDE_ON'
-                op_mute = row.operator("giggle.toggle_mute", text="", icon=eye_icon)
+                op_mute = row.operator("jiggle.toggle_mute", text="", icon=eye_icon)
                 op_mute.mod_name = m.name
 
-                op_solo = row.operator("giggle.solo_zone", text="S", emboss=True)
+                op_solo = row.operator("jiggle.solo_zone", text="S", emboss=True)
                 op_solo.mod_name = m.name
 
             # Integrated Active Zone Card (Directly below active selection)
             idx = settings.active_zone_index
-            if 0 <= idx < len(giggle_mods):
-                active_mod = giggle_mods[idx]
+            if 0 <= idx < len(jiggle_mods):
+                active_mod = jiggle_mods[idx]
                 card = box.box()
                 
                 s_inputs = getattr(getattr(active_mod, "properties", None), "inputs", None)
@@ -6326,14 +6326,14 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                     row_c.label(text="Mode: Cage XPBD (Fast)", icon='PHYSICS')
                     row_c.label(text=f"[{c_verts} verts]")
                     row_c_btn = mode_box.row(align=True)
-                    row_c_btn.operator("giggle.rebuild_cage", text="Rebuild", icon='FILE_REFRESH')
-                    row_c_btn.operator("giggle.toggle_simulation_mode", text="Switch to Full-Mesh", icon='ARROW_LEFTRIGHT')
+                    row_c_btn.operator("jiggle.rebuild_cage", text="Rebuild", icon='FILE_REFRESH')
+                    row_c_btn.operator("jiggle.toggle_simulation_mode", text="Switch to Full-Mesh", icon='ARROW_LEFTRIGHT')
                 else:
                     row_f = mode_box.row(align=True)
                     row_f.label(text="Mode: Full-Mesh XPBD", icon='MESH_DATA')
                     v_count = len(obj.data.vertices) if hasattr(obj.data, "vertices") else 0
                     row_f.label(text=f"[{v_count:,} verts]")
-                    mode_box.operator("giggle.generate_cage", text="Accelerate with Cage XPBD (5-8x Faster)", icon='AUTO')
+                    mode_box.operator("jiggle.generate_cage", text="Accelerate with Cage XPBD (5-8x Faster)", icon='AUTO')
 
                     # Explain a failed automatic cage instead of leaving the user
                     # with a silently expensive zone.
@@ -6346,18 +6346,18 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                             err_box.label(text=line_txt)
                         err_box.label(text=f"Simulating all {v_count:,} vertices at once.")
                         row_err = err_box.row(align=True)
-                        row_err.operator("giggle.generate_cage", text="Retry Cage", icon='FILE_REFRESH')
-                        row_err.operator("giggle.keep_full_mesh", text="Keep Full-Mesh", icon='CHECKMARK')
+                        row_err.operator("jiggle.generate_cage", text="Retry Cage", icon='FILE_REFRESH')
+                        row_err.operator("jiggle.keep_full_mesh", text="Keep Full-Mesh", icon='CHECKMARK')
 
                 row_rem = card.row(align=True)
-                row_rem.operator("giggle.remove_zone", text=f"Remove Zone '{active_mod.name}'", icon='X')
+                row_rem.operator("jiggle.remove_zone", text=f"Remove Zone '{active_mod.name}'", icon='X')
         else:
             box.label(text="No jiggle zones on this mesh yet.", icon='INFO')
 
         layout.separator()
 
         # Add New Zone Section (Collapsible with Auto-Fold)
-        is_open = settings.show_create_zone or (not giggle_mods)
+        is_open = settings.show_create_zone or (not jiggle_mods)
         add_box = layout.box()
 
         row_toggle = add_box.row(align=True)
@@ -6373,13 +6373,13 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
             # Searchable Vertex Group with Quick-Pick and Create buttons
             row = add_box.row(align=True)
             row.prop_search(settings, "new_zone_vg", obj, "vertex_groups", text="Vertex Group", icon='GROUP_VERTEX')
-            row.operator("giggle.pick_active_vg", text="", icon='EYEDROPPER')
-            row.operator("giggle.create_vg", text="", icon='ADD')
+            row.operator("jiggle.pick_active_vg", text="", icon='EYEDROPPER')
+            row.operator("jiggle.create_vg", text="", icon='ADD')
 
             # Check for duplicate zone assignment on selected vertex group
             vg_assigned_mod = None
             if settings.new_zone_vg:
-                for m in giggle_mods:
+                for m in jiggle_mods:
                     s_in = getattr(getattr(m, "properties", None), "inputs", None)
                     if m.node_group and m.node_group.name == 'Wiggy 0.1' and s_in and hasattr(s_in, "Socket_2"):
                         if getattr(s_in.Socket_2, "attribute_name", "") == settings.new_zone_vg:
@@ -6397,7 +6397,7 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
                 warn_box.alert = True
                 warn_box.label(text=f"Warning: Matches bone in '{bone_arm}'!", icon='ERROR')
                 warn_box.label(text="Direct use breaks bone skinning.")
-                warn_box.operator("giggle.duplicate_safe_vg", text="Duplicate as Safe Group", icon='DUPLICATE')
+                warn_box.operator("jiggle.duplicate_safe_vg", text="Duplicate as Safe Group", icon='DUPLICATE')
 
             # Segmented physics mode selector (Realistic vs Stylized)
             row_mode_new = add_box.row(align=True)
@@ -6413,42 +6413,42 @@ class VIEW3D_PT_giggle_main(VIEW3D_PT_giggle_base, Panel):
             add_box.prop(settings, "new_zone_cage_mode", text="Cage XPBD (fast, recommended)")
 
             add_box.operator(
-                "giggle.add_zone",
+                "jiggle.add_zone",
                 text="Add Jiggle Zone (Cage XPBD)" if settings.new_zone_cage_mode else "Add Jiggle Zone (Full-Mesh)",
                 icon='MOD_PHYSICS'
             )
 
 
-class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_presets"
+class VIEW3D_PT_jiggle_presets(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_presets"
     bl_label = "Zone Presets & Tightness"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
-        settings = getattr(context.scene, 'giggle_settings', None) if context.scene else None
+        mods = get_jiggle_modifiers(obj)
+        settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
         return bool(settings and 0 <= settings.active_zone_index < len(mods) and mods[settings.active_zone_index].node_group and mods[settings.active_zone_index].node_group.name == 'Wiggy 0.1')
 
     def draw(self, context):
         layout = self.layout
         try:
-            settings = context.scene.giggle_settings
+            settings = context.scene.jiggle_settings
             obj = context.active_object
-            mods = get_giggle_modifiers(obj)
+            mods = get_jiggle_modifiers(obj)
             idx = settings.active_zone_index
             active_mod = mods[idx] if (0 <= idx < len(mods)) else None
 
             # Auto-sync preset category on initial load or zone change BEFORE drawing props
             if active_mod and obj:
-                if obj.get("_giggle_last_synced_mod") != active_mod.name:
+                if obj.get("_jiggle_last_synced_mod") != active_mod.name:
                     try:
                         sync_settings_from_zone_mod(settings, active_mod)
                     except Exception:
                         pass
                     try:
-                        obj["_giggle_last_synced_mod"] = active_mod.name
+                        obj["_jiggle_last_synced_mod"] = active_mod.name
                     except Exception:
                         pass
 
@@ -6457,7 +6457,7 @@ class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
             col = box.column(align=True)
             row_hdr = col.row(align=True)
             row_hdr.label(text="Anatomical & Clothing Preset:", icon='PRESET')
-            row_hdr.operator("giggle.sync_active_zone", text="", icon='FILE_REFRESH')
+            row_hdr.operator("jiggle.sync_active_zone", text="", icon='FILE_REFRESH')
             
             # Segmented physics mode selector (Realistic vs Stylized)
             row_mode = col.row(align=True)
@@ -6483,9 +6483,9 @@ class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
                 desc_box.label(text=data['description'])
 
             # Contextual Intelligent Apply Button with Cross-Anatomy Warning
-            meta = get_mod_giggle_metadata(active_mod) if active_mod else None
+            meta = get_mod_jiggle_metadata(active_mod) if active_mod else None
             active_cat = meta[1] if meta else None
-            target_name = active_mod.name.replace("Giggle_", "") if active_mod else "Zone"
+            target_name = active_mod.name.replace("Jiggle_", "") if active_mod else "Zone"
             choice_cat = data.get('category_id', '')
             
             # Only flag cross-anatomy when both are specific categories and genuinely differ
@@ -6505,7 +6505,7 @@ class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
                 btn_text = f"Apply '{data.get('name', choice_id)}' to {target_name}"
                 btn_icon = 'CHECKMARK'
 
-            op = row.operator("giggle.apply_preset", text=btn_text, icon=btn_icon)
+            op = row.operator("jiggle.apply_preset", text=btn_text, icon=btn_icon)
             op.preset = choice_id
 
             # 2. Support & Tightness Modifiers
@@ -6515,13 +6515,13 @@ class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
             t_col.label(text="Support & Tightness (Scale Active Zone):", icon='MOD_CLOTH')
 
             r1 = t_col.row(align=True)
-            r1.operator("giggle.apply_support_level", text="Bare / Free").level = 'FREE'
-            r1.operator("giggle.apply_support_level", text="Loose Fit").level = 'LOOSE'
-            r1.operator("giggle.apply_support_level", text="Normal").level = 'NORMAL'
+            r1.operator("jiggle.apply_support_level", text="Bare / Free").level = 'FREE'
+            r1.operator("jiggle.apply_support_level", text="Loose Fit").level = 'LOOSE'
+            r1.operator("jiggle.apply_support_level", text="Normal").level = 'NORMAL'
 
             r2 = t_col.row(align=True)
-            r2.operator("giggle.apply_support_level", text="Firm / Sports").level = 'FIRM'
-            r2.operator("giggle.apply_support_level", text="Compression").level = 'COMPRESSION'
+            r2.operator("jiggle.apply_support_level", text="Firm / Sports").level = 'FIRM'
+            r2.operator("jiggle.apply_support_level", text="Compression").level = 'COMPRESSION'
 
             # Clean 2-Line Non-Truncating Tightness Guide
             sub_box = t_box.box()
@@ -6542,32 +6542,32 @@ class VIEW3D_PT_giggle_presets(VIEW3D_PT_giggle_base, Panel):
             guard_col = guard_box.column(align=True)
             guard_col.label(text="Action & Jump Dynamics:", icon='MOD_PHYSICS')
             g_row = guard_col.row(align=True)
-            g_row.operator("giggle.apply_action_safety", text="Action / Jump Safety Guard", icon='PHYSICS')
-            if active_mod and obj and any(k.startswith(f'_giggle_backup_{active_mod.name}_') for k in obj.keys()):
-                g_row.operator("giggle.restore_zone_settings", text="Restore", icon='LOOP_BACK')
+            g_row.operator("jiggle.apply_action_safety", text="Action / Jump Safety Guard", icon='PHYSICS')
+            if active_mod and obj and any(k.startswith(f'_jiggle_backup_{active_mod.name}_') for k in obj.keys()):
+                g_row.operator("jiggle.restore_zone_settings", text="Restore", icon='LOOP_BACK')
 
         except Exception as e:
             err_box = layout.box()
             err_box.alert = True
             err_box.label(text="Preset Refresh Needed", icon='INFO')
-            err_box.operator("giggle.sync_active_zone", text="Refresh Preset for Active Zone", icon='FILE_REFRESH')
+            err_box.operator("jiggle.sync_active_zone", text="Refresh Preset for Active Zone", icon='FILE_REFRESH')
 
 
-class VIEW3D_PT_giggle_dynamics(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_dynamics"
+class VIEW3D_PT_jiggle_dynamics(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_dynamics"
     bl_label = "Dynamics & Inertia"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and get_giggle_modifiers(obj)
+        return obj and get_jiggle_modifiers(obj)
 
     def draw(self, context):
         layout = self.layout
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
 
         if not (0 <= idx < len(mods)):
@@ -6593,25 +6593,25 @@ class VIEW3D_PT_giggle_dynamics(VIEW3D_PT_giggle_base, Panel):
                 col.prop(settings, "zone_deform_depth", text="Deform Depth", slider=True)
 
 
-class VIEW3D_PT_giggle_shape(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_shape"
+class VIEW3D_PT_jiggle_shape(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_shape"
     bl_label = "Shape & Volume"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if not mods:
             return False
-        idx = context.scene.giggle_settings.active_zone_index
+        idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
             return mods[idx].node_group.name == "Wiggy 0.1"
         return False
 
     def draw(self, context):
         layout = self.layout
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         col = layout.column()
         col.prop(settings, "zone_preserve_volume", text="Preserve Volume", slider=True)
         col.prop(settings, "zone_sway", text="Sway (Island Swing)", slider=True)
@@ -6620,21 +6620,21 @@ class VIEW3D_PT_giggle_shape(VIEW3D_PT_giggle_base, Panel):
         col.prop(settings, "zone_edge_fade", text="Edge Fade (Rings)")
 
 
-class VIEW3D_PT_giggle_collisions(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_collisions"
+class VIEW3D_PT_jiggle_collisions(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_collisions"
     bl_label = "Collisions & Contacts"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and get_giggle_modifiers(obj)
+        return obj and get_jiggle_modifiers(obj)
 
     def draw(self, context):
         layout = self.layout
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         idx = settings.active_zone_index
         if not (0 <= idx < len(mods)):
             return
@@ -6643,8 +6643,8 @@ class VIEW3D_PT_giggle_collisions(VIEW3D_PT_giggle_base, Panel):
 
         col = layout.column()
         row = col.row(align=True)
-        row.operator("giggle.add_collider", text="Add Selected as Collider", icon='MOD_PHYSICS')
-        row.operator("giggle.add_wind", text="Add Wind", icon='FORCE_WIND')
+        row.operator("jiggle.add_collider", text="Add Selected as Collider", icon='MOD_PHYSICS')
+        row.operator("jiggle.add_wind", text="Add Wind", icon='FORCE_WIND')
 
         if mod.node_group.name == "Wiggy 0.1":
             if s_inputs and hasattr(s_inputs, "Socket_7"):
@@ -6664,18 +6664,18 @@ class VIEW3D_PT_giggle_collisions(VIEW3D_PT_giggle_base, Panel):
             col.prop(s_inputs.Socket_5, "value", text="Colliders Collection")
 
 
-class VIEW3D_PT_giggle_self_collision(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_self_collision"
+class VIEW3D_PT_jiggle_self_collision(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_self_collision"
     bl_label = "Self Collision"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if not mods:
             return False
-        idx = context.scene.giggle_settings.active_zone_index
+        idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
             return mods[idx].node_group.name == "Wiggy 0.1"
         return False
@@ -6683,7 +6683,7 @@ class VIEW3D_PT_giggle_self_collision(VIEW3D_PT_giggle_base, Panel):
     def draw(self, context):
         layout = self.layout
         obj = context.active_object
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
 
         col = layout.column()
         col.prop(settings, "zone_self_collision", text="Self Collision")
@@ -6696,25 +6696,25 @@ class VIEW3D_PT_giggle_self_collision(VIEW3D_PT_giggle_base, Panel):
             col.prop(settings, "zone_self_max_depth", text="Max Depth", slider=True)
 
 
-class VIEW3D_PT_giggle_forces(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_forces"
+class VIEW3D_PT_jiggle_forces(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_forces"
     bl_label = "Gravity & Forces"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if not mods:
             return False
-        idx = context.scene.giggle_settings.active_zone_index
+        idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
             return mods[idx].node_group.name == "Wiggy 0.1"
         return False
 
     def draw(self, context):
         layout = self.layout
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
 
         col = layout.column()
         col.prop(settings, "zone_gravity", text="Enable Gravity")
@@ -6722,15 +6722,15 @@ class VIEW3D_PT_giggle_forces(VIEW3D_PT_giggle_base, Panel):
             col.prop(settings, "zone_gravity_accel", text="Acceleration", slider=True)
 
 
-class VIEW3D_PT_giggle_playback(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_playback"
+class VIEW3D_PT_jiggle_playback(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_playback"
     bl_label = "Simulation & Playback"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         obj = context.active_object
 
         # --- SIMULATION CACHE MANAGER CARD ---
@@ -6738,7 +6738,7 @@ class VIEW3D_PT_giggle_playback(VIEW3D_PT_giggle_base, Panel):
         box_cache.label(text="Simulation Cache & Baking:", icon='FILE_CACHE')
 
         # Check cache status across active zones
-        sim_objs = get_giggle_simulation_objects(context, obj)
+        sim_objs = get_jiggle_simulation_objects(context, obj)
         all_baked = bool(sim_objs)
         any_outdated = False
         any_failed = False
@@ -6796,15 +6796,15 @@ class VIEW3D_PT_giggle_playback(VIEW3D_PT_giggle_base, Panel):
         # Action Buttons
         row_bake = box_cache.row(align=True)
         row_bake.scale_y = 1.2
-        row_bake.operator("giggle.bake_missing", text="Bake Missing / Outdated", icon='PLAY')
-        row_bake.operator("giggle.rebake_all", text="Rebake All", icon='FILE_REFRESH')
+        row_bake.operator("jiggle.bake_missing", text="Bake Missing / Outdated", icon='PLAY')
+        row_bake.operator("jiggle.rebake_all", text="Rebake All", icon='FILE_REFRESH')
 
         row_ops2 = box_cache.row(align=True)
-        row_ops2.operator("giggle.check_cache_validity", text="Check Validity", icon='CHECKMARK')
-        row_ops2.operator("giggle.clear_sim_cache", text="Clear Cache", icon='TRASH')
+        row_ops2.operator("jiggle.check_cache_validity", text="Check Validity", icon='CHECKMARK')
+        row_ops2.operator("jiggle.clear_sim_cache", text="Clear Cache", icon='TRASH')
 
         row_act = box_cache.row(align=True)
-        row_act.operator("giggle.bake_selected_cage", text="Bake Active Zone Only", icon='RESTRICT_SELECT_OFF')
+        row_act.operator("jiggle.bake_selected_cage", text="Bake Active Zone Only", icon='RESTRICT_SELECT_OFF')
 
         if settings:
             box_cache.prop(settings, "check_cache_on_render", text="Pre-Flight Render Check")
@@ -6812,13 +6812,13 @@ class VIEW3D_PT_giggle_playback(VIEW3D_PT_giggle_base, Panel):
         # Timeline scrubbing row
         col = layout.column(align=True)
         row = col.row(align=True)
-        row.operator("giggle.reset_sim", text="Reset to Start", icon='REW')
+        row.operator("jiggle.reset_sim", text="Reset to Start", icon='REW')
         row.prop(scene, "frame_current", text="Current Frame")
 
         # Solver details if active zone is Wiggy
         obj = context.active_object
-        mods = get_giggle_modifiers(obj)
-        settings = scene.giggle_settings
+        mods = get_jiggle_modifiers(obj)
+        settings = scene.jiggle_settings
         idx = settings.active_zone_index
 
         if mods and 0 <= idx < len(mods):
@@ -6831,16 +6831,16 @@ class VIEW3D_PT_giggle_playback(VIEW3D_PT_giggle_base, Panel):
                     box.prop(s_inputs.Socket_61, "value", text="Simulate Active")
                     row = box.row(align=True)
                     row.prop(s_inputs.Socket_14, "value", text="Substeps")
-                    op = row.operator("giggle.autotune_substeps", text="Auto FPS", icon='TIME')
+                    op = row.operator("jiggle.autotune_substeps", text="Auto FPS", icon='TIME')
                     op.all_zones = False
                     box.prop(s_inputs.Socket_15, "value", text="Iterations")
                     box.prop(s_inputs.Socket_127, "value", text="Speed (Slow Motion)")
 
 
-class VIEW3D_PT_giggle_diagnostics(VIEW3D_PT_giggle_base, Panel):
-    bl_idname = "VIEW3D_PT_giggle_diagnostics"
+class VIEW3D_PT_jiggle_diagnostics(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_diagnostics"
     bl_label = "Performance & Diagnostics"
-    bl_parent_id = "VIEW3D_PT_giggle_main"
+    bl_parent_id = "VIEW3D_PT_jiggle_main"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
@@ -6850,7 +6850,7 @@ class VIEW3D_PT_giggle_diagnostics(VIEW3D_PT_giggle_base, Panel):
             layout.label(text="Select an object to inspect diagnostics.", icon='INFO')
             return
 
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         sim_mods = [m for m in mods if getattr(m, "node_group", None) and m.node_group.name == "Wiggy 0.1"]
 
         box = layout.box()
@@ -6884,11 +6884,11 @@ class VIEW3D_PT_giggle_diagnostics(VIEW3D_PT_giggle_base, Panel):
             if has_subsurf_issue:
                 row = warn_box.row(align=True)
                 row.label(text="Subsurf level > 1 slows viewport", icon='CANCEL')
-                row.operator("giggle.clamp_subdivision", text="Clamp to 1")
+                row.operator("jiggle.clamp_subdivision", text="Clamp to 1")
             if gpu_subdiv_on:
                 row = warn_box.row(align=True)
                 row.label(text="GPU Subdivision causes memory spikes", icon='CANCEL')
-                row.operator("giggle.fix_gpu_subdivision", text="Fix")
+                row.operator("jiggle.fix_gpu_subdivision", text="Fix")
             if has_high_poly_self_col:
                 warn_box.label(text="Self-Collision on full mesh is expensive (3-5x slower)", icon='INFO')
         else:
@@ -7059,9 +7059,9 @@ def find_character_clothing_collections(context):
     return [col for col, _ in (cats['outfits'] + cats['accessories'] + cats['other'])]
 
 
-class GIGGLE_OT_wardrobe_show_all(Operator):
+class JIGGLE_OT_wardrobe_show_all(Operator):
     """Unhide all wardrobe and character collections and objects"""
-    bl_idname = "giggle.wardrobe_show_all"
+    bl_idname = "jiggle.wardrobe_show_all"
     bl_label = "Show All Wardrobe"
     bl_description = "Show all clothing, hair, accessories, and body collections in Viewport and Render"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7070,18 +7070,18 @@ class GIGGLE_OT_wardrobe_show_all(Operator):
         cats = get_wardrobe_scene_collections(context)
         for cat_list in cats.values():
             for col, objs in cat_list:
-                if hasattr(col, "giggle_show_render"):
-                    col.giggle_show_render = True
+                if hasattr(col, "jiggle_show_render"):
+                    col.jiggle_show_render = True
                 for obj in objs:
-                    if hasattr(obj, "giggle_show_render"):
-                        obj.giggle_show_render = True
+                    if hasattr(obj, "jiggle_show_render"):
+                        obj.jiggle_show_render = True
         self.report({'INFO'}, "All wardrobe collections and objects are now visible.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_wardrobe_hide_clothes(Operator):
+class JIGGLE_OT_wardrobe_hide_clothes(Operator):
     """Hide clothing and accessories to view base body for jiggle physics tuning"""
-    bl_idname = "giggle.wardrobe_hide_clothes"
+    bl_idname = "jiggle.wardrobe_hide_clothes"
     bl_label = "Hide Clothes (Nude Base)"
     bl_description = "Hide all outfits and accessories while keeping base body visible for physics tuning"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7090,22 +7090,22 @@ class GIGGLE_OT_wardrobe_hide_clothes(Operator):
         cats = get_wardrobe_scene_collections(context)
         # Ensure body is visible
         for col, objs in cats['body']:
-            if hasattr(col, "giggle_show_render"):
-                col.giggle_show_render = True
+            if hasattr(col, "jiggle_show_render"):
+                col.jiggle_show_render = True
             for obj in objs:
-                if hasattr(obj, "giggle_show_render"):
-                    obj.giggle_show_render = True
+                if hasattr(obj, "jiggle_show_render"):
+                    obj.jiggle_show_render = True
         # Hide outfits and accessories
         for col, objs in (cats['outfits'] + cats['accessories'] + cats['other']):
-            if hasattr(col, "giggle_show_render"):
-                col.giggle_show_render = False
+            if hasattr(col, "jiggle_show_render"):
+                col.jiggle_show_render = False
         self.report({'INFO'}, "Hidden all clothes; base character body is visible for tuning.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_select_body_mesh(Operator):
+class JIGGLE_OT_select_body_mesh(Operator):
     """Unhide character body collection and select the main body mesh"""
-    bl_idname = "giggle.select_body_mesh"
+    bl_idname = "jiggle.select_body_mesh"
     bl_label = "Select Body Mesh"
     bl_description = "Unhide body collection and select the character mesh"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7114,11 +7114,11 @@ class GIGGLE_OT_select_body_mesh(Operator):
         cats = get_wardrobe_scene_collections(context)
         target_obj = None
         for col, objs in cats['body']:
-            if hasattr(col, "giggle_show_render"):
-                col.giggle_show_render = True
+            if hasattr(col, "jiggle_show_render"):
+                col.jiggle_show_render = True
             for obj in objs:
-                if hasattr(obj, "giggle_show_render"):
-                    obj.giggle_show_render = True
+                if hasattr(obj, "jiggle_show_render"):
+                    obj.jiggle_show_render = True
                 if not target_obj:
                     name_l = obj.name.lower()
                     if any(k in name_l for k in ('body', 'character', 'skin', 'base', 'mesh')):
@@ -7150,9 +7150,9 @@ class GIGGLE_OT_select_body_mesh(Operator):
 
 
 
-class GIGGLE_OT_fix_body_manifold(Operator):
+class JIGGLE_OT_fix_body_manifold(Operator):
     """Clean non-manifold multi-face edges on active mesh so Surface Deform modifier can bind"""
-    bl_idname = "giggle.fix_body_manifold"
+    bl_idname = "jiggle.fix_body_manifold"
     bl_label = "Fix Body Non-Manifold (Enable Surface Deform)"
     bl_description = "Removes multi-face (>2 polygons) internal edges preventing Surface Deform from binding"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7185,9 +7185,9 @@ class GIGGLE_OT_fix_body_manifold(Operator):
         return {'CANCELLED'}
 
 
-class GIGGLE_OT_rebind_clothing_modifiers(Operator):
+class JIGGLE_OT_rebind_clothing_modifiers(Operator):
     """Reset to the scene start frame and rebind supported clothing deformation modifiers."""
-    bl_idname = "giggle.rebind_clothing_modifiers"
+    bl_idname = "jiggle.rebind_clothing_modifiers"
     bl_label = "Rebind Clothing Deform"
     bl_description = "Reset to the scene start frame and rebind clothing Surface Deform, Mesh Deform and Corrective Smooth modifiers"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7264,15 +7264,15 @@ class GIGGLE_OT_rebind_clothing_modifiers(Operator):
         if failures:
             self.report({'WARNING'}, f"Rebound {rebound_count} modifier(s); {len(failures)} failed. See console for details.")
             for failure in failures:
-                print(f"[Giggle] Rebind failed: {failure}")
+                print(f"[Jiggle] Rebind failed: {failure}")
         else:
             self.report({'INFO'}, f"Rebound {rebound_count} deform modifiers at frame {scene.frame_start}; restored the original active object and mode.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_attach_clothing_proxy(Operator):
+class JIGGLE_OT_attach_clothing_proxy(Operator):
     """Attach selected clothes to body jiggle using a clean non-destructive Deform Proxy (100% flush, transactional)"""
-    bl_idname = "giggle.attach_clothing_proxy"
+    bl_idname = "jiggle.attach_clothing_proxy"
     bl_label = "Attach Clothes to Jiggle (Flush Surface)"
     bl_description = "Creates/reuses a clean manifold jiggle proxy and transactionally binds clothes with Surface Deform"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7280,28 +7280,28 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
     @classmethod
     def poll(cls, context):
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        has_giggle = any(get_giggle_modifiers(o) for o in selected_meshes)
-        return len(selected_meshes) >= 2 and has_giggle
+        has_jiggle = any(get_jiggle_modifiers(o) for o in selected_meshes)
+        return len(selected_meshes) >= 2 and has_jiggle
 
     def execute(self, context):
         import bmesh
         from mathutils import Vector
         scene = context.scene
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        giggle_bodies = [o for o in selected_meshes if get_giggle_modifiers(o)]
-        if not giggle_bodies:
-            self.report({'WARNING'}, "No selected mesh has Giggle physics. Select your character body and clothing.")
+        jiggle_bodies = [o for o in selected_meshes if get_jiggle_modifiers(o)]
+        if not jiggle_bodies:
+            self.report({'WARNING'}, "No selected mesh has Jiggle physics. Select your character body and clothing.")
             return {'CANCELLED'}
 
-        active_obj = context.active_object if context.active_object in giggle_bodies else giggle_bodies[0]
+        active_obj = context.active_object if context.active_object in jiggle_bodies else jiggle_bodies[0]
         clothing_objs = [o for o in selected_meshes if o != active_obj]
         if not clothing_objs:
             self.report({'WARNING'}, "No clothing meshes selected. Select both clothing and character body.")
             return {'CANCELLED'}
 
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         target_choice = getattr(settings, 'clothing_target_zone', 'AUTO') if settings else 'AUTO'
-        body_mods = get_giggle_modifiers(active_obj)
+        body_mods = get_jiggle_modifiers(active_obj)
 
         # 1. Resolve target zone for EACH clothing mesh independently
         garment_zones = {}
@@ -7360,10 +7360,10 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
         bound_count = 0
 
         # Dedicated hidden collection for proxies to prevent viewport clutter / wire cage display
-        giggle_col = bpy.data.collections.get("Giggle_Proxies")
-        if not giggle_col:
-            giggle_col = bpy.data.collections.new("Giggle_Proxies")
-            scene.collection.children.link(giggle_col)
+        jiggle_col = bpy.data.collections.get("Jiggle_Proxies")
+        if not jiggle_col:
+            jiggle_col = bpy.data.collections.new("Jiggle_Proxies")
+            scene.collection.children.link(jiggle_col)
 
         try:
             try:
@@ -7416,9 +7416,9 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                     has_wiggy = any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in existing_proxy.modifiers)
 
                     # Robust Fingerprint Validation (High 4)
-                    match_body = existing_proxy.get('_giggle_source_body') == active_obj.name
-                    match_verts = existing_proxy.get('_giggle_source_verts') == len(active_obj.data.vertices)
-                    match_vg = existing_proxy.get('_giggle_vg_name') == vg_name
+                    match_body = existing_proxy.get('_jiggle_source_body') == active_obj.name
+                    match_verts = existing_proxy.get('_jiggle_source_verts') == len(active_obj.data.vertices)
+                    match_vg = existing_proxy.get('_jiggle_vg_name') == vg_name
 
                     if has_verts and has_arm and has_wiggy and match_body and match_verts and match_vg:
                         can_reuse = True
@@ -7437,7 +7437,7 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                     proxy_data = active_obj.data.copy()
                     proxy_data.name = f"{tmp_proxy_name}_Mesh"
                     tmp_proxy = bpy.data.objects.new(tmp_proxy_name, proxy_data)
-                    giggle_col.objects.link(tmp_proxy)
+                    jiggle_col.objects.link(tmp_proxy)
                     tmp_proxy.matrix_world = active_obj.matrix_world
 
                     # CRITICAL 2: Track immediately upon creation before any subsequent operation can throw!
@@ -7483,7 +7483,7 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                         if vg.name not in tmp_proxy.vertex_groups:
                             tmp_proxy.vertex_groups.new(name=vg.name)
 
-                    # Copy Armature and Giggle modifier to proxy
+                    # Copy Armature and Jiggle modifier to proxy
                     tmp_proxy.modifiers.clear()
                     for m in active_obj.modifiers:
                         if m.type == 'ARMATURE':
@@ -7511,10 +7511,10 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                                                 pass
 
                     # Store proxy metadata & fingerprint properties (High 4)
-                    tmp_proxy['_giggle_source_body'] = active_obj.name
-                    tmp_proxy['_giggle_source_verts'] = len(active_obj.data.vertices)
-                    tmp_proxy['_giggle_vg_name'] = vg_name
-                    tmp_proxy['_giggle_proxy'] = True
+                    tmp_proxy['_jiggle_source_body'] = active_obj.name
+                    tmp_proxy['_jiggle_source_verts'] = len(active_obj.data.vertices)
+                    tmp_proxy['_jiggle_vg_name'] = vg_name
+                    tmp_proxy['_jiggle_proxy'] = True
 
                     # Normal display instead of WIRE to eliminate black wire cages when unhidden
                     tmp_proxy.display_type = 'TEXTURED'
@@ -7526,7 +7526,7 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
 
                 # Stage SurfaceDeform on each clothing item in this zone
                 for cloth in clothes_in_zone:
-                    staged_sd = cloth.modifiers.new(name="_tmp_Giggle_SurfaceDeform", type='SURFACE_DEFORM')
+                    staged_sd = cloth.modifiers.new(name="_tmp_Jiggle_SurfaceDeform", type='SURFACE_DEFORM')
                     staged_sd.target = target_proxy
                     staged_sd.falloff = 4.0
                     staged_modifiers.append((cloth, staged_sd))
@@ -7576,7 +7576,7 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                             try:
                                 bpy.ops.object.surfacedeform_bind(modifier=dep_mod.name)
                             except Exception as exc:
-                                print(f"[Giggle] Migration bind failed on '{dep_obj.name}': {exc}")
+                                print(f"[Jiggle] Migration bind failed on '{dep_obj.name}': {exc}")
 
                         if not dep_mod.is_bound:
                             # Revert failing dependent and all prior migrated dependents back to old_perm
@@ -7623,22 +7623,22 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                     p.hide_render = True
 
             # Hide dedicated proxies collection
-            if giggle_col:
-                giggle_col.hide_viewport = True
-                giggle_col.hide_render = True
+            if jiggle_col:
+                jiggle_col.hide_viewport = True
+                jiggle_col.hide_render = True
 
             # Finalize staged modifiers (Selective cleanup - Medium 8)
             for cloth, staged_sd in staged_modifiers:
                 for m in list(cloth.modifiers):
                     if m == staged_sd:
                         continue
-                    if m.type == 'NODES' and m.name.startswith("Giggle_") and m.name.endswith("_Follow"):
+                    if m.type == 'NODES' and m.name.startswith("Jiggle_") and m.name.endswith("_Follow"):
                         cloth.modifiers.remove(m)
-                    elif m.type == 'SURFACE_DEFORM' and m.name == "Giggle_SurfaceDeform":
+                    elif m.type == 'SURFACE_DEFORM' and m.name == "Jiggle_SurfaceDeform":
                         cloth.modifiers.remove(m)
-                staged_sd.name = "Giggle_SurfaceDeform"
+                staged_sd.name = "Jiggle_SurfaceDeform"
 
-            self.report({'INFO'}, f"Successfully attached {bound_count} clothing mesh(es) to Giggle jiggle zones!")
+            self.report({'INFO'}, f"Successfully attached {bound_count} clothing mesh(es) to Jiggle jiggle zones!")
             return {'FINISHED'}
 
         except Exception as e:
@@ -7684,7 +7684,7 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
                 detail = "; ".join(f"'{name}': {error}" for name, error in restore_failures)
                 message = (f"Some armatures could not be returned to their original pose ({detail}). "
                            "Set their Pose Position back manually.")
-                print("[Giggle] " + message)
+                print("[Jiggle] " + message)
                 try:
                     self.report({'ERROR'}, message)
                 except Exception:
@@ -7713,29 +7713,29 @@ class GIGGLE_OT_attach_clothing_proxy(Operator):
 
 
 
-class GIGGLE_OT_copy_zone_to_clothing(Operator):
-    """Copy active Giggle jiggle zone to selected clothing meshes so clothing moves with body physics"""
-    bl_idname = "giggle.copy_zone_to_clothing"
+class JIGGLE_OT_copy_zone_to_clothing(Operator):
+    """Copy active Jiggle jiggle zone to selected clothing meshes so clothing moves with body physics"""
+    bl_idname = "jiggle.copy_zone_to_clothing"
     bl_label = "Copy Jiggle Zone to Clothing"
-    bl_description = "Add a matching Giggle physics zone directly to selected clothing objects"
+    bl_description = "Add a matching Jiggle physics zone directly to selected clothing objects"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        has_giggle = any(get_giggle_modifiers(o) for o in selected_meshes)
-        return len(selected_meshes) >= 2 and has_giggle
+        has_jiggle = any(get_jiggle_modifiers(o) for o in selected_meshes)
+        return len(selected_meshes) >= 2 and has_jiggle
 
     def execute(self, context):
-        settings = context.scene.giggle_settings
+        settings = context.scene.jiggle_settings
         selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-        giggle_bodies = [o for o in selected_meshes if get_giggle_modifiers(o)]
-        if not giggle_bodies:
-            self.report({'WARNING'}, "No selected mesh has Giggle physics.")
+        jiggle_bodies = [o for o in selected_meshes if get_jiggle_modifiers(o)]
+        if not jiggle_bodies:
+            self.report({'WARNING'}, "No selected mesh has Jiggle physics.")
             return {'CANCELLED'}
 
-        active_obj = context.active_object if context.active_object in giggle_bodies else giggle_bodies[0]
-        mods = get_giggle_modifiers(active_obj)
+        active_obj = context.active_object if context.active_object in jiggle_bodies else jiggle_bodies[0]
+        mods = get_jiggle_modifiers(active_obj)
         idx = settings.active_zone_index
         if not (0 <= idx < len(mods)):
             idx = 0
@@ -7750,7 +7750,7 @@ class GIGGLE_OT_copy_zone_to_clothing(Operator):
             if hasattr(cloth, "add_rest_position_attribute"):
                 cloth.add_rest_position_attribute = True
 
-            mod_name = f"Giggle_{cloth.name}_Follow"
+            mod_name = f"Jiggle_{cloth.name}_Follow"
             existing = cloth.modifiers.get(mod_name)
             if existing:
                 cloth.modifiers.remove(existing)
@@ -7767,7 +7767,7 @@ class GIGGLE_OT_copy_zone_to_clothing(Operator):
             # Project vertex group from body to clothing using KDTree proximity
             source_vg_name = get_mod_socket_attribute_name(source_mod, 'Socket_2')
             if not source_vg_name or not isinstance(source_vg_name, str) or source_vg_name not in active_obj.vertex_groups:
-                mod_suffix = source_mod.name.replace("Giggle_", "")
+                mod_suffix = source_mod.name.replace("Jiggle_", "")
                 if mod_suffix in active_obj.vertex_groups:
                     source_vg_name = mod_suffix
                 elif "Jiggle_Zone" in active_obj.vertex_groups:
@@ -7779,7 +7779,7 @@ class GIGGLE_OT_copy_zone_to_clothing(Operator):
 
             body_vg = active_obj.vertex_groups.get(source_vg_name) if isinstance(source_vg_name, str) else None
 
-            cloth_vg_name = f"{source_vg_name}_Cloth" if source_vg_name else "Giggle_Cloth"
+            cloth_vg_name = f"{source_vg_name}_Cloth" if source_vg_name else "Jiggle_Cloth"
             cloth_vg = cloth.vertex_groups.get(cloth_vg_name) or cloth.vertex_groups.new(name=cloth_vg_name)
 
             if body_vg and len(active_obj.data.vertices) > 0 and len(cloth.data.vertices) > 0:
@@ -7807,16 +7807,16 @@ class GIGGLE_OT_copy_zone_to_clothing(Operator):
                 cloth_vg.add(list(range(len(cloth.data.vertices))), 1.0, 'REPLACE')
 
             set_mod_socket(new_mod, 'Socket_2', attribute=cloth_vg_name)
-            position_giggle_modifier(cloth, new_mod)
+            position_jiggle_modifier(cloth, new_mod)
             added += 1
 
-        self.report({'INFO'}, f"Applied Giggle physics zone to {added} clothing meshes.")
+        self.report({'INFO'}, f"Applied Jiggle physics zone to {added} clothing meshes.")
         return {'FINISHED'}
 
 
-class GIGGLE_OT_split_shapekey_lr(Operator):
+class JIGGLE_OT_split_shapekey_lr(Operator):
     """Split active shape key into .l and .r halves at X=0"""
-    bl_idname = "giggle.split_shapekey_lr"
+    bl_idname = "jiggle.split_shapekey_lr"
     bl_label = "Split Shape Key (L / R)"
     bl_description = "Split the active shape key into independent left (.l) and right (.r) shape keys"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7872,9 +7872,9 @@ class GIGGLE_OT_split_shapekey_lr(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_create_body_mask(Operator):
+class JIGGLE_OT_create_body_mask(Operator):
     """Create an anti-clipping mask from selected vertices so skin never pokes through tight clothing"""
-    bl_idname = "giggle.create_body_mask"
+    bl_idname = "jiggle.create_body_mask"
     bl_label = "Create Anti-Clipping Mask"
     bl_description = "In Edit Mode: Create a mask modifier from selected vertices to prevent skin poking through clothes"
     bl_options = {'REGISTER', 'UNDO'}
@@ -7901,7 +7901,7 @@ class GIGGLE_OT_create_body_mask(Operator):
             vg = obj.vertex_groups.new(name=vg_name)
         vg.add(selected_indices, 1.0, 'REPLACE')
 
-        mod_name = f"Giggle_Mask_{self.mask_name}"
+        mod_name = f"Jiggle_Mask_{self.mask_name}"
         mask_mod = obj.modifiers.get(mod_name)
         if not mask_mod:
             mask_mod = obj.modifiers.new(name=mod_name, type='MASK')
@@ -7914,9 +7914,9 @@ class GIGGLE_OT_create_body_mask(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_relink_textures(Operator):
+class JIGGLE_OT_relink_textures(Operator):
     """Re-link missing or pink textures in the project"""
-    bl_idname = "giggle.relink_textures"
+    bl_idname = "jiggle.relink_textures"
     bl_label = "Re-Link Missing Textures"
     bl_description = "Scan directory to find and re-link missing texture images"
     bl_options = {'REGISTER'}
@@ -7926,12 +7926,12 @@ class GIGGLE_OT_relink_textures(Operator):
         return {'FINISHED'}
 
 
-class VIEW3D_PT_giggle_wardrobe(Panel):
+class VIEW3D_PT_jiggle_wardrobe(Panel):
     bl_label = "Wardrobe & Costumes"
-    bl_idname = "VIEW3D_PT_giggle_wardrobe"
+    bl_idname = "VIEW3D_PT_jiggle_wardrobe"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Giggle'
+    bl_category = 'Jiggle'
     bl_order = 15
     bl_options = {'DEFAULT_CLOSED'}
 
@@ -7947,8 +7947,8 @@ class VIEW3D_PT_giggle_wardrobe(Panel):
 
         # Top utility buttons
         top_row = layout.row(align=True)
-        top_row.operator("giggle.wardrobe_show_all", text="Show All", icon='CHECKMARK')
-        top_row.operator("giggle.wardrobe_hide_clothes", text="Hide Clothes (Tune)", icon='HIDE_ON')
+        top_row.operator("jiggle.wardrobe_show_all", text="Show All", icon='CHECKMARK')
+        top_row.operator("jiggle.wardrobe_hide_clothes", text="Hide Clothes (Tune)", icon='HIDE_ON')
 
         # Helper to draw a category section
         def draw_cat_section(title, col_list, section_icon):
@@ -7957,24 +7957,24 @@ class VIEW3D_PT_giggle_wardrobe(Panel):
             header_box = layout.box()
             header_box.label(text=title, icon=section_icon)
             for col, objs in col_list:
-                is_vis = col.giggle_show_render
+                is_vis = col.jiggle_show_render
                 col_box = header_box.box()
                 row = col_box.row(align=True)
                 icon = 'CHECKBOX_HL' if is_vis else 'CHECKBOX_DEHL'
                 label_text = col.name if is_vis else f"{col.name} [Hidden]"
-                row.prop(col, "giggle_show_render", text=label_text, toggle=True, icon=icon)
+                row.prop(col, "jiggle_show_render", text=label_text, toggle=True, icon=icon)
 
                 # If this is the character body, provide a direct 1-click select button
                 if title.startswith("Character"):
-                    row.operator("giggle.select_body_mesh", text="", icon='RESTRICT_SELECT_OFF')
+                    row.operator("jiggle.select_body_mesh", text="", icon='RESTRICT_SELECT_OFF')
 
                 if is_vis and objs:
                     obj_col = col_box.column(align=True)
                     for obj in objs:
-                        obj_vis = obj.giggle_show_render
+                        obj_vis = obj.jiggle_show_render
                         obj_icon = 'CHECKBOX_HL' if obj_vis else 'CHECKBOX_DEHL'
                         obj_row = obj_col.row(align=True)
-                        obj_row.prop(obj, "giggle_show_render", text=obj.name, toggle=True, icon=obj_icon)
+                        obj_row.prop(obj, "jiggle_show_render", text=obj.name, toggle=True, icon=obj_icon)
 
         # 1. Outfits & Clothing
         draw_cat_section("Outfits & Costumes", cats['outfits'], 'MOD_CLOTH')
@@ -7989,19 +7989,19 @@ class VIEW3D_PT_giggle_wardrobe(Panel):
         draw_cat_section("Other Scene Meshes", cats['other'], 'OUTLINER_COLLECTION')
 
 
-class VIEW3D_PT_giggle_clothing_follower(Panel):
+class VIEW3D_PT_jiggle_clothing_follower(Panel):
     bl_label = "Clothing Follower & Deform"
-    bl_idname = "VIEW3D_PT_giggle_clothing_follower"
+    bl_idname = "VIEW3D_PT_jiggle_clothing_follower"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Giggle'
+    bl_category = 'Jiggle'
     bl_order = 16
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
         try:
-            settings = getattr(context.scene, 'giggle_settings', None)
+            settings = getattr(context.scene, 'jiggle_settings', None)
             box = layout.box()
             box.label(text="Make Clothing Follow Jiggle:", icon='MOD_CLOTH')
 
@@ -8012,8 +8012,8 @@ class VIEW3D_PT_giggle_clothing_follower(Panel):
                     col.label(text=f"Target: {settings.clothing_target_zone} (Manual)", icon='RESTRICT_SELECT_OFF')
                 else:
                     selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
-                    giggle_bodies = [o for o in selected_meshes if get_giggle_modifiers(o)]
-                    body = context.active_object if context.active_object in giggle_bodies else (giggle_bodies[0] if giggle_bodies else None)
+                    jiggle_bodies = [o for o in selected_meshes if get_jiggle_modifiers(o)]
+                    body = context.active_object if context.active_object in jiggle_bodies else (jiggle_bodies[0] if jiggle_bodies else None)
                     clothing_objs = [o for o in selected_meshes if o != body]
                     if len(clothing_objs) > 1 and body:
                         col.label(text=f"Auto: {len(clothing_objs)} garments (resolving per-mesh):", icon='INFO')
@@ -8036,21 +8036,21 @@ class VIEW3D_PT_giggle_clothing_follower(Panel):
                         else:
                             col.label(text="Auto: Each garment resolves closest zone", icon='INFO')
 
-            box.operator("giggle.attach_clothing_proxy", text="Attach Clothes to Jiggle (Flush Surface)", icon='MOD_MESHDEFORM')
+            box.operator("jiggle.attach_clothing_proxy", text="Attach Clothes to Jiggle (Flush Surface)", icon='MOD_MESHDEFORM')
 
             box.separator()
             box.label(text="Clothing Deform Rebind:", icon='HOOK')
-            box.operator("giggle.rebind_clothing_modifiers", text="Rebind Modifiers (Scene Start)", icon='FILE_REFRESH')
+            box.operator("jiggle.rebind_clothing_modifiers", text="Rebind Modifiers (Scene Start)", icon='FILE_REFRESH')
 
             box.separator()
-            box.operator("giggle.copy_zone_to_clothing", text="Copy Physics Solver to Clothes (Advanced)", icon='DUPLICATE')
+            box.operator("jiggle.copy_zone_to_clothing", text="Copy Physics Solver to Clothes (Advanced)", icon='DUPLICATE')
         except Exception as e:
             layout.label(text=f"UI Error: {e}", icon='ERROR')
 
 
-class GIGGLE_OT_pin_hair_roots(Operator):
+class JIGGLE_OT_pin_hair_roots(Operator):
     """Pin hair roots to the scalp (weight 0.0) with smooth falloff to free tips (1.0)"""
-    bl_idname = "giggle.pin_hair_roots"
+    bl_idname = "jiggle.pin_hair_roots"
     bl_label = "Auto-Pin Hair Roots (Gradient)"
     bl_description = "Automatically pin hair roots to scalp (0.0) with a smooth falloff down to free tips (1.0) to prevent detachment"
     bl_options = {'REGISTER', 'UNDO'}
@@ -8061,8 +8061,8 @@ class GIGGLE_OT_pin_hair_roots(Operator):
             self.report({'ERROR'}, "Active object must be a Mesh")
             return {'CANCELLED'}
 
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         target_vg_name = ""
 
         # Determine target vertex group from active zone or selection
@@ -8139,12 +8139,12 @@ class GIGGLE_OT_pin_hair_roots(Operator):
         self.report({'INFO'}, f"Auto-pinned hair roots on '{vg.name}': Top 12% locked (0.0), smooth falloff to tips (1.0)")
         return {'FINISHED'}
 
-class VIEW3D_PT_giggle_character_tools(Panel):
+class VIEW3D_PT_jiggle_character_tools(Panel):
     bl_label = "Character Shape & Anti-Clipping"
-    bl_idname = "VIEW3D_PT_giggle_character_tools"
+    bl_idname = "VIEW3D_PT_jiggle_character_tools"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Giggle'
+    bl_category = 'Jiggle'
     bl_order = 17
     bl_options = {'DEFAULT_CLOSED'}
 
@@ -8152,24 +8152,24 @@ class VIEW3D_PT_giggle_character_tools(Panel):
         layout = self.layout
         box = layout.box()
         box.label(text="Anti-Clipping Mask (Edit Mode):", icon='MOD_MASK')
-        box.operator("giggle.create_body_mask", text="Hide Covered Skin Under Clothes", icon='SELECT_SUBTRACT')
+        box.operator("jiggle.create_body_mask", text="Hide Covered Skin Under Clothes", icon='SELECT_SUBTRACT')
 
         box.separator()
         box.label(text="Distance-Based Falloff (Crease Fix):", icon='BRUSH_DATA')
-        box.operator("giggle.generate_distance_falloff", text="Generate Falloff Weights", icon='SMOOTHCURVE')
+        box.operator("jiggle.generate_distance_falloff", text="Generate Falloff Weights", icon='SMOOTHCURVE')
 
         box.separator()
         box.label(text="Shape Key Splitter:", icon='SHAPEKEY_DATA')
-        box.operator("giggle.split_shapekey_lr", text="Split Active Shape Key (L / R)", icon='ARROW_LEFTRIGHT')
+        box.operator("jiggle.split_shapekey_lr", text="Split Active Shape Key (L / R)", icon='ARROW_LEFTRIGHT')
 
         box.separator()
         box.label(text="Textures & Optimization:", icon='IMAGE_DATA')
-        box.operator("giggle.relink_textures", text="Find & Re-Link Textures", icon='VIEWZOOM')
+        box.operator("jiggle.relink_textures", text="Find & Re-Link Textures", icon='VIEWZOOM')
 
 
-class GIGGLE_OT_apply_action_safety(Operator):
+class JIGGLE_OT_apply_action_safety(Operator):
     """Apply action-safe physical limits and auto-scale substeps for jumping, running and explosive impacts"""
-    bl_idname = "giggle.apply_action_safety"
+    bl_idname = "jiggle.apply_action_safety"
     bl_label = "Apply Action / Jump Safety"
     bl_description = "Clamps displacement, sway, and wobble to jump-safe limits and scales solver substeps"
     bl_options = {'REGISTER', 'UNDO'}
@@ -8177,10 +8177,10 @@ class GIGGLE_OT_apply_action_safety(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None) if context.scene else None
+        settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
         if not obj or not settings:
             return False
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if not (0 <= settings.active_zone_index < len(mods)):
             return False
         mod = mods[settings.active_zone_index]
@@ -8188,18 +8188,18 @@ class GIGGLE_OT_apply_action_safety(Operator):
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         mod = mods[settings.active_zone_index]
 
         # Backup current settings on the parent object ID data
         for sock_id in ['Socket_123', 'Socket_119', 'Socket_126', 'Socket_8', 'Socket_118', 'Socket_6', 'Socket_30', 'Socket_14', 'Socket_122']:
             val = get_mod_socket(mod, sock_id)
             if val is not None:
-                obj[f"_giggle_backup_{mod.name}_{sock_id}"] = val
+                obj[f"_jiggle_backup_{mod.name}_{sock_id}"] = val
 
         # Identify category / anatomy
-        meta = get_mod_giggle_metadata(mod)
+        meta = get_mod_jiggle_metadata(mod)
         active_cat = meta[1] if meta else ""
         vg_name = ""
         s_zone = getattr(getattr(mod, "properties", None), "inputs", None)
@@ -8232,7 +8232,7 @@ class GIGGLE_OT_apply_action_safety(Operator):
             set_mod_socket(mod, 'Socket_122', 3)
 
         set_mod_socket(mod, 'Socket_14', target_substeps)
-        obj[f"_giggle_action_safety_{mod.name}"] = True
+        obj[f"_jiggle_action_safety_{mod.name}"] = True
 
         # Preserve user active frame during action safety application
 
@@ -8241,9 +8241,9 @@ class GIGGLE_OT_apply_action_safety(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_restore_zone_settings(Operator):
+class JIGGLE_OT_restore_zone_settings(Operator):
     """Restore previous simulation settings backed up before applying Action Safety"""
-    bl_idname = "giggle.restore_zone_settings"
+    bl_idname = "jiggle.restore_zone_settings"
     bl_label = "Restore Original Settings"
     bl_description = "Restores simulation parameters backed up before Action Safety was applied"
     bl_options = {'REGISTER', 'UNDO'}
@@ -8251,23 +8251,23 @@ class GIGGLE_OT_restore_zone_settings(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        settings = getattr(context.scene, 'giggle_settings', None) if context.scene else None
+        settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
         if not obj or not settings:
             return False
-        mods = get_giggle_modifiers(obj)
+        mods = get_jiggle_modifiers(obj)
         if not (0 <= settings.active_zone_index < len(mods)):
             return False
         mod = mods[settings.active_zone_index]
-        prefix = f'_giggle_backup_{mod.name}_'
+        prefix = f'_jiggle_backup_{mod.name}_'
         return any(k.startswith(prefix) for k in obj.keys())
 
     def execute(self, context):
         obj = context.active_object
-        settings = context.scene.giggle_settings
-        mods = get_giggle_modifiers(obj)
+        settings = context.scene.jiggle_settings
+        mods = get_jiggle_modifiers(obj)
         mod = mods[settings.active_zone_index]
 
-        prefix = f'_giggle_backup_{mod.name}_'
+        prefix = f'_jiggle_backup_{mod.name}_'
         restored_count = 0
         for k in list(obj.keys()):
             if k.startswith(prefix):
@@ -8275,7 +8275,7 @@ class GIGGLE_OT_restore_zone_settings(Operator):
                 set_mod_socket(mod, sock_id, obj[k])
                 restored_count += 1
                 del obj[k]
-        obj[f"_giggle_action_safety_{mod.name}"] = False
+        obj[f"_jiggle_action_safety_{mod.name}"] = False
 
         # Preserve user active frame during zone restore
 
@@ -8283,9 +8283,9 @@ class GIGGLE_OT_restore_zone_settings(Operator):
         return {'FINISHED'}
 
 
-class GIGGLE_OT_generate_distance_falloff(Operator):
+class JIGGLE_OT_generate_distance_falloff(Operator):
     """Generate smooth distance-based falloff weights from selected vertices or zone apex"""
-    bl_idname = "giggle.generate_distance_falloff"
+    bl_idname = "jiggle.generate_distance_falloff"
     bl_label = "Generate Distance Falloff Weights"
     bl_description = "Creates a smooth, spherical or ellipsoidal distance falloff weight map to eliminate sharp boundary creases"
     bl_options = {'REGISTER', 'UNDO'}
@@ -8389,21 +8389,21 @@ class GIGGLE_OT_generate_distance_falloff(Operator):
 @bpy.app.handlers.persistent
 def render_pre_cache_check(scene):
     try:
-        settings = getattr(scene, 'giggle_settings', None)
+        settings = getattr(scene, 'jiggle_settings', None)
         if not settings or not getattr(settings, 'check_cache_on_render', True):
             return
         outdated = []
         unbaked = []
-        bind_targets = get_giggle_cage_bind_targets(scene.objects)
+        bind_targets = get_jiggle_cage_bind_targets(scene.objects)
         for o in scene.objects:
-            if is_giggle_owned_cage(o, bind_targets):
+            if is_jiggle_owned_cage(o, bind_targets):
                 st, reason = check_cage_validity(o, bpy.context)
                 if st == 'OUTDATED':
                     outdated.append(f"{o.name} ({reason})")
                 elif st != 'BAKED':
                     unbaked.append(o.name)
         if outdated or unbaked:
-            print("\n[GIGGLE PRE-FLIGHT RENDER WARNING]")
+            print("\n[JIGGLE PRE-FLIGHT RENDER WARNING]")
             if outdated:
                 print(f"  WARNING: Rendering with OUTDATED cache on: {', '.join(outdated)}")
             if unbaked:
@@ -8413,77 +8413,137 @@ def render_pre_cache_check(scene):
         pass
 
 classes = (
-    GIGGLE_OT_apply_action_safety,
-    GIGGLE_OT_restore_zone_settings,
-    GIGGLE_OT_generate_distance_falloff,
-    GIGGLE_OT_wardrobe_show_all,
-    GIGGLE_OT_wardrobe_hide_clothes,
-    GIGGLE_OT_select_body_mesh,
-    GIGGLE_OT_fix_body_manifold,
-    GIGGLE_OT_rebind_clothing_modifiers,
-    GIGGLE_OT_attach_clothing_proxy,
-    GIGGLE_OT_copy_zone_to_clothing,
-    GIGGLE_OT_split_shapekey_lr,
-    GIGGLE_OT_create_body_mask,
-    GIGGLE_OT_relink_textures,
-    VIEW3D_PT_giggle_wardrobe,
-    VIEW3D_PT_giggle_clothing_follower,
-    VIEW3D_PT_giggle_character_tools,
-    GiggleSceneSettings,
-    GIGGLE_OT_pick_active_vg,
-    GIGGLE_OT_create_vg,
-    GIGGLE_OT_duplicate_safe_vg,
-    GIGGLE_OT_pin_hair_roots,
-    GIGGLE_OT_add_zone,
-    GIGGLE_OT_remove_zone,
-    GIGGLE_OT_apply_support_level,
-    GIGGLE_OT_apply_preset,
-    GIGGLE_OT_toggle_mute,
-    GIGGLE_OT_solo_zone,
-    GIGGLE_OT_add_collider,
-    GIGGLE_OT_add_wind,
-    GIGGLE_OT_autotune_substeps,
-    GIGGLE_OT_reset_sim,
-    GIGGLE_OT_clear_sim_cache,
-    GIGGLE_OT_fix_gpu_subdivision,
-    GIGGLE_OT_clamp_subdivision,
-    GIGGLE_OT_generate_cage,
-    GIGGLE_OT_toggle_simulation_mode,
-    GIGGLE_OT_rebuild_cage,
-    GIGGLE_OT_keep_full_mesh,
-    GIGGLE_OT_bake_all_cages,
-    GIGGLE_OT_bake_selected_cage,
-    GIGGLE_OT_rebake_all,
-    GIGGLE_OT_rebake_sim,
-    GIGGLE_OT_bake_missing,
-    GIGGLE_OT_check_cache_validity,
-    GIGGLE_OT_mark_cache_outdated,
-    GIGGLE_OT_select_zone,
-    GIGGLE_OT_sync_active_zone,
-    VIEW3D_PT_giggle_main,
-    VIEW3D_PT_giggle_presets,
-    VIEW3D_PT_giggle_dynamics,
-    VIEW3D_PT_giggle_shape,
-    VIEW3D_PT_giggle_collisions,
-    VIEW3D_PT_giggle_self_collision,
-    VIEW3D_PT_giggle_forces,
-    VIEW3D_PT_giggle_playback,
-    VIEW3D_PT_giggle_diagnostics,
+    JIGGLE_OT_apply_action_safety,
+    JIGGLE_OT_restore_zone_settings,
+    JIGGLE_OT_generate_distance_falloff,
+    JIGGLE_OT_wardrobe_show_all,
+    JIGGLE_OT_wardrobe_hide_clothes,
+    JIGGLE_OT_select_body_mesh,
+    JIGGLE_OT_fix_body_manifold,
+    JIGGLE_OT_rebind_clothing_modifiers,
+    JIGGLE_OT_attach_clothing_proxy,
+    JIGGLE_OT_copy_zone_to_clothing,
+    JIGGLE_OT_split_shapekey_lr,
+    JIGGLE_OT_create_body_mask,
+    JIGGLE_OT_relink_textures,
+    VIEW3D_PT_jiggle_wardrobe,
+    VIEW3D_PT_jiggle_clothing_follower,
+    VIEW3D_PT_jiggle_character_tools,
+    JiggleSceneSettings,
+    JIGGLE_OT_pick_active_vg,
+    JIGGLE_OT_create_vg,
+    JIGGLE_OT_duplicate_safe_vg,
+    JIGGLE_OT_pin_hair_roots,
+    JIGGLE_OT_add_zone,
+    JIGGLE_OT_remove_zone,
+    JIGGLE_OT_apply_support_level,
+    JIGGLE_OT_apply_preset,
+    JIGGLE_OT_toggle_mute,
+    JIGGLE_OT_solo_zone,
+    JIGGLE_OT_add_collider,
+    JIGGLE_OT_add_wind,
+    JIGGLE_OT_autotune_substeps,
+    JIGGLE_OT_reset_sim,
+    JIGGLE_OT_clear_sim_cache,
+    JIGGLE_OT_fix_gpu_subdivision,
+    JIGGLE_OT_clamp_subdivision,
+    JIGGLE_OT_generate_cage,
+    JIGGLE_OT_toggle_simulation_mode,
+    JIGGLE_OT_rebuild_cage,
+    JIGGLE_OT_keep_full_mesh,
+    JIGGLE_OT_bake_all_cages,
+    JIGGLE_OT_bake_selected_cage,
+    JIGGLE_OT_rebake_all,
+    JIGGLE_OT_rebake_sim,
+    JIGGLE_OT_bake_missing,
+    JIGGLE_OT_check_cache_validity,
+    JIGGLE_OT_mark_cache_outdated,
+    JIGGLE_OT_select_zone,
+    JIGGLE_OT_sync_active_zone,
+    VIEW3D_PT_jiggle_main,
+    VIEW3D_PT_jiggle_presets,
+    VIEW3D_PT_jiggle_dynamics,
+    VIEW3D_PT_jiggle_shape,
+    VIEW3D_PT_jiggle_collisions,
+    VIEW3D_PT_jiggle_self_collision,
+    VIEW3D_PT_jiggle_forces,
+    VIEW3D_PT_jiggle_playback,
+    VIEW3D_PT_jiggle_diagnostics,
 )
+
+_LEGACY_MARKER_PREFIX = "_giggle_"
+_LEGACY_PROXIES_COLLECTION = "Giggle_Proxies"
+_LEGACY_TEMP_COLLECTIONS = {"_tmp_Giggle_SurfaceDeform": "_tmp_Jiggle_SurfaceDeform"}
+_MIGRATION_FLAG = "_jz_v3_migrated"
+
+
+def _migrate_legacy_giggle_markers():
+    """Adopt 2.x Giggle marker keys onto Jiggle Zone names.
+
+    Legacy keys are copied, not removed, so a scene remains usable if Giggle 2.1
+    is re-enabled later. Returns the number of adopted values.
+    """
+    changed = 0
+    for collection in (bpy.data.objects, bpy.data.meshes, bpy.data.scenes, bpy.data.collections):
+        for id_block in collection:
+            try:
+                keys = [k for k in id_block.keys() if k.startswith(_LEGACY_MARKER_PREFIX)]
+            except Exception:
+                continue
+            for key in keys:
+                new_key = "_jiggle_" + key[len(_LEGACY_MARKER_PREFIX):]
+                if new_key in id_block.keys():
+                    continue
+                try:
+                    id_block[new_key] = id_block[key]
+                    changed += 1
+                except Exception:
+                    pass
+
+    proxies = bpy.data.collections.get(_LEGACY_PROXIES_COLLECTION)
+    if proxies is not None and bpy.data.collections.get("Jiggle_Proxies") is None:
+        proxies.name = "Jiggle_Proxies"
+        changed += 1
+
+    for legacy_name, current_name in _LEGACY_TEMP_COLLECTIONS.items():
+        legacy = bpy.data.collections.get(legacy_name)
+        if legacy is not None and bpy.data.collections.get(current_name) is None:
+            legacy.name = current_name
+            changed += 1
+
+    return changed
+
+
+@bpy.app.handlers.persistent
+def jiggle_migrate_legacy_on_load(*_args):
+    try:
+        if not bpy.data.scenes:
+            return
+        if all(scene.get(_MIGRATION_FLAG, False) for scene in bpy.data.scenes):
+            return
+        _migrate_legacy_giggle_markers()
+        for scene in bpy.data.scenes:
+            scene[_MIGRATION_FLAG] = True
+    except Exception:
+        pass
+
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     if render_pre_cache_check not in bpy.app.handlers.render_pre:
         bpy.app.handlers.render_pre.append(render_pre_cache_check)
-    bpy.types.Scene.giggle_settings = PointerProperty(type=GiggleSceneSettings)
-    bpy.types.Collection.giggle_show_render = BoolProperty(
+    if jiggle_migrate_legacy_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(jiggle_migrate_legacy_on_load)
+    jiggle_migrate_legacy_on_load()
+    bpy.types.Scene.jiggle_settings = PointerProperty(type=JiggleSceneSettings)
+    bpy.types.Collection.jiggle_show_render = BoolProperty(
         name="Show in Viewport & Render",
         description="Toggle Collection Visibility for both Viewport and Render",
         get=get_show_collection_render,
         set=set_show_collection_render
     )
-    bpy.types.Object.giggle_show_render = BoolProperty(
+    bpy.types.Object.jiggle_show_render = BoolProperty(
         name="Show in Viewport & Render",
         description="Toggle Object Visibility for both Viewport and Render",
         get=get_show_object_render,
@@ -8491,23 +8551,28 @@ def register():
     )
 
 def unregister():
+    if jiggle_migrate_legacy_on_load in bpy.app.handlers.load_post:
+        try:
+            bpy.app.handlers.load_post.remove(jiggle_migrate_legacy_on_load)
+        except Exception:
+            pass
     if render_pre_cache_check in bpy.app.handlers.render_pre:
         try:
             bpy.app.handlers.render_pre.remove(render_pre_cache_check)
         except Exception:
             pass
-    if hasattr(bpy.types.Collection, "giggle_show_render"):
-        del bpy.types.Collection.giggle_show_render
-    if hasattr(bpy.types.Object, "giggle_show_render"):
-        del bpy.types.Object.giggle_show_render
+    if hasattr(bpy.types.Collection, "jiggle_show_render"):
+        del bpy.types.Collection.jiggle_show_render
+    if hasattr(bpy.types.Object, "jiggle_show_render"):
+        del bpy.types.Object.jiggle_show_render
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-    if hasattr(bpy.types.Scene, "giggle_settings"):
+    if hasattr(bpy.types.Scene, "jiggle_settings"):
         try:
-            del bpy.types.Scene.giggle_settings
+            del bpy.types.Scene.jiggle_settings
         except Exception:
             pass
 

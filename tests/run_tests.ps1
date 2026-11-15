@@ -1,4 +1,4 @@
-# Runs the Giggle regression tests on every installed Blender version.
+# Runs the Jiggle regression tests on every installed Blender version.
 #
 #   powershell -ExecutionPolicy Bypass -File tests\run_tests.ps1
 #
@@ -21,10 +21,10 @@ $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $Artifacts (Get-Date -Format 'yyyyMMdd_HHmmss')
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-$source = Join-Path $root 'giggle_addon\__init__.py'
+$source = Join-Path $root 'jiggle_zone\__init__.py'
 $sourceHash = (Get-FileHash $source).Hash
 $summary = New-Object System.Collections.Generic.List[string]
-$summary.Add("Giggle test run $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+$summary.Add("Jiggle test run $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $summary.Add("blend      : $Blend")
 $summary.Add("source sha : $sourceHash")
 if (Test-Path (Join-Path $root '.git')) {
@@ -47,10 +47,10 @@ foreach ($exe in $Blender) {
     $label = if ($product -match '^(\d+\.\d+)') { $matches[1] } else { 'unknown' }
 
     # Keep the installed extension equal to the source under test.
-    $install = Join-Path $env:APPDATA "Blender Foundation\Blender\$label\extensions\user_default\giggle_physics"
+    $install = Join-Path $env:APPDATA "Blender Foundation\Blender\$label\extensions\user_default\jiggle_zone"
     if (Test-Path $install) {
         Copy-Item $source (Join-Path $install '__init__.py') -Force
-        $changelog = Join-Path $root 'giggle_addon\CHANGELOG.md'
+        $changelog = Join-Path $root 'jiggle_zone\CHANGELOG.md'
         if (Test-Path $changelog) { Copy-Item $changelog (Join-Path $install 'CHANGELOG.md') -Force }
         $installedHash = (Get-FileHash (Join-Path $install '__init__.py')).Hash
         $match = $installedHash -eq $sourceHash
@@ -58,7 +58,7 @@ foreach ($exe in $Blender) {
         $summary.Add("run   Blender $label ($product): installed copy matches source = $match")
         if (-not $match) { $failed++ }
     } else {
-        Write-Host "WARNING: giggle_physics is not installed for Blender $label; the acceptance suite will fail"
+        Write-Host "WARNING: jiggle_zone is not installed for Blender $label; the acceptance suite will fail"
         $summary.Add("run   Blender $label ($product): extension NOT installed at $install")
     }
 
