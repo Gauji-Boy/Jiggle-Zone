@@ -29,6 +29,7 @@ EXPECTED_ENTRIES = (
     "jiggle_zone/__init__.py",
     "jiggle_zone/assets/JiggleV2.blend",
     "jiggle_zone/assets/Wiggy_0.1.blend",
+    "jiggle_zone/assets/Wiggy_0.2.0.blend",
     "jiggle_zone/blender_manifest.toml",
 )
 

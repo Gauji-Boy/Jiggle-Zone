@@ -2462,6 +2462,31 @@ PRESET_ENUM_ITEMS = get_preset_enum_items(None, None)
 # ==============================================================================
 # ZONE METADATA & RECIPIE HELPERS
 # ==============================================================================
+
+# Bundled Wiggy solver node groups. An explicit allow-list, never a prefix match,
+# so an unrelated group named "Wiggy ..." is not mistaken for a supported solver.
+WIGGY_GROUPS = ("Wiggy 0.1", "Wiggy 0.2.0")
+
+# Node group the add-on creates for new zones. Existing modifiers keep whichever
+# group their project already embeds; nothing here rewrites them.
+WIGGY_NEW_GROUP = "Wiggy 0.2.0"
+
+# Bundled asset file that supplies each known node group.
+ASSET_GROUP_FILES = {
+    "Wiggy 0.1": "Wiggy_0.1.blend",
+    "Wiggy 0.2.0": "Wiggy_0.2.0.blend",
+    "Collider": "Wiggy_0.2.0.blend",
+    "Wiggy Wind": "Wiggy_0.2.0.blend",
+    "Jiggle": "JiggleV2.blend",
+    "Jiggle + Deformation": "JiggleV2.blend",
+}
+
+
+def is_wiggy_group(node_group):
+    """True only for a bundled Wiggy solver group. Safe to call with None."""
+    return getattr(node_group, "name", None) in WIGGY_GROUPS
+
+
 def set_mod_jiggle_metadata(mod, gender, category, preset):
     """Store zone metadata on parent object ID data."""
     if not mod:
@@ -2510,7 +2535,7 @@ def get_mod_jiggle_metadata(mod):
     # whole-token match so "female" is not mistaken for "male".
     name_lower = mod.name.lower()
     s_in = getattr(getattr(mod, "properties", None), "inputs", None)
-    if mod.node_group and mod.node_group.name == "Wiggy 0.1" and s_in and hasattr(s_in, "Socket_2"):
+    if mod.node_group and is_wiggy_group(mod.node_group) and s_in and hasattr(s_in, "Socket_2"):
         name_lower += " " + getattr(s_in.Socket_2, "attribute_name", "").lower()
     male_group = bool(
         re.search(r'(?<![a-z0-9])male(?![a-z0-9])', name_lower)
@@ -2653,7 +2678,10 @@ def ensure_nodetree(tree_name):
     if tree_name in bpy.data.node_groups:
         return bpy.data.node_groups[tree_name]
     
-    filename = "Wiggy_0.1.blend" if ("Wiggy" in tree_name or tree_name == "Collider") else "JiggleV2.blend"
+    filename = ASSET_GROUP_FILES.get(tree_name)
+    if not filename:
+        print(f"[Jiggle] No bundled asset provides node group '{tree_name}'")
+        return None
     path = get_asset_blend_path(filename)
     if not path or not os.path.exists(path):
         print(f"[Jiggle] Asset file not found: {filename}")
@@ -2672,7 +2700,7 @@ def get_mod_socket_prop(mod, socket_id):
 
 def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
     """Set a Geometry Nodes modifier input; return False when the socket is unavailable."""
-    is_wiggy = bool(getattr(mod, "node_group", None) and mod.node_group.name == "Wiggy 0.1")
+    is_wiggy = bool(getattr(mod, "node_group", None) and is_wiggy_group(mod.node_group))
     # Wiggy Socket_2 is its vertex-group attribute, never a numeric value.
     if is_wiggy and socket_id == 'Socket_2':
         if isinstance(value, str):
@@ -2772,7 +2800,8 @@ def get_mod_socket_attribute_name(mod, socket_id='Socket_2'):
 def is_jiggle_modifier(mod):
     if mod.type != 'NODES' or not mod.node_group:
         return False
-    return (mod.node_group.name in {'Wiggy 0.1', 'Jiggle', 'Jiggle + Deformation'} or
+    return (is_wiggy_group(mod.node_group) or
+            mod.node_group.name in {'Jiggle', 'Jiggle + Deformation'} or
             is_jiggle_addon_name(mod.name))
 
 def get_jiggle_modifiers(obj):
@@ -3591,7 +3620,7 @@ class JIGGLE_OT_add_zone(Operator):
         preset_key = settings.new_zone_preset
         preset = PRESETS.get(preset_key)
         
-        tree_name = "Wiggy 0.1"
+        tree_name = WIGGY_NEW_GROUP
 
         ng = ensure_nodetree(tree_name)
         if not ng:
@@ -3808,7 +3837,7 @@ def sync_socket_to_cage(mod, socket_id, value=None, attribute=None):
     if vg_name and socket_id != 'Socket_2':
         cage = get_zone_cage_object(obj, vg_name)
         if cage:
-            c_mod = next((m for m in cage.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
+            c_mod = next((m for m in cage.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)), None)
             if c_mod:
                 set_mod_socket(c_mod, socket_id, value=value, attribute=attribute, sync_cage=False)
 
@@ -4210,7 +4239,7 @@ class JIGGLE_OT_generate_cage(Operator):
                     if hasattr(arm_mod, prop):
                         setattr(c_arm, prop, getattr(arm_mod, prop))
 
-            # 6. Add Wiggy 0.1 solver modifier
+            # 6. Add the Wiggy solver modifier
             c_wiggy = cage_obj.modifiers.new(f"Jiggle_Cage_{vg_name}", 'NODES')
             c_wiggy.node_group = src_mod.node_group
 
@@ -4531,7 +4560,7 @@ class JIGGLE_OT_apply_support_level(Operator):
         settings = getattr(context.scene, 'jiggle_settings', None)
         if not settings or not (0 <= settings.active_zone_index < len(mods)):
             return False
-        return bool(mods[settings.active_zone_index].node_group and mods[settings.active_zone_index].node_group.name == 'Wiggy 0.1')
+        return bool(mods[settings.active_zone_index].node_group and is_wiggy_group(mods[settings.active_zone_index].node_group))
 
     def execute(self, context):
         obj = context.active_object
@@ -4542,7 +4571,7 @@ class JIGGLE_OT_apply_support_level(Operator):
             self.report({'ERROR'}, "No active Jiggle zone.")
             return {'CANCELLED'}
         mod = mods[idx]
-        if not mod.node_group or mod.node_group.name != 'Wiggy 0.1':
+        if not mod.node_group or not is_wiggy_group(mod.node_group):
             self.report({'ERROR'}, "Support profiles are only available for Wiggy XPBD zones.")
             return {'CANCELLED'}
 
@@ -4651,7 +4680,7 @@ class JIGGLE_OT_apply_preset(Operator):
         if not settings or not (0 <= settings.active_zone_index < len(mods)):
             return False
         active_mod = mods[settings.active_zone_index]
-        return bool(active_mod.node_group and active_mod.node_group.name == 'Wiggy 0.1')
+        return bool(active_mod.node_group and is_wiggy_group(active_mod.node_group))
 
     def execute(self, context):
         obj = context.active_object
@@ -4667,7 +4696,7 @@ class JIGGLE_OT_apply_preset(Operator):
         if not preset:
             self.report({'ERROR'}, f"Unknown preset '{self.preset}'.")
             return {'CANCELLED'}
-        if preset.get('engine', 'WIGGY') != 'WIGGY' or not mod.node_group or mod.node_group.name != 'Wiggy 0.1':
+        if preset.get('engine', 'WIGGY') != 'WIGGY' or not mod.node_group or not is_wiggy_group(mod.node_group):
             self.report({'ERROR'}, "This preset requires the Wiggy XPBD modifier. Legacy Jiggle V2 modifiers cannot use Wiggy recipes.")
             return {'CANCELLED'}
 
@@ -4759,7 +4788,7 @@ class JIGGLE_OT_add_collider(Operator):
         if not (settings and context.selected_objects and len(context.selected_objects) > 1):
             return False
         idx = settings.active_zone_index
-        return bool(0 <= idx < len(mods) and mods[idx].node_group and mods[idx].node_group.name == "Wiggy 0.1")
+        return bool(0 <= idx < len(mods) and mods[idx].node_group and is_wiggy_group(mods[idx].node_group))
 
     def execute(self, context):
         active_obj = context.active_object
@@ -4772,7 +4801,7 @@ class JIGGLE_OT_add_collider(Operator):
             return {'CANCELLED'}
 
         mod = mods[idx]
-        if not mod.node_group or mod.node_group.name != "Wiggy 0.1":
+        if not mod.node_group or not is_wiggy_group(mod.node_group):
             self.report({'ERROR'}, "Colliders are supported only by Wiggy XPBD zones.")
             return {'CANCELLED'}
 
@@ -4854,11 +4883,11 @@ class JIGGLE_OT_autotune_substeps(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return bool(obj and any(m.node_group and m.node_group.name == "Wiggy 0.1" for m in get_jiggle_modifiers(obj)))
+        return bool(obj and any(m.node_group and is_wiggy_group(m.node_group) for m in get_jiggle_modifiers(obj)))
 
     def execute(self, context):
         obj = context.active_object
-        mods = [m for m in get_jiggle_modifiers(obj) if m.node_group and m.node_group.name == "Wiggy 0.1"]
+        mods = [m for m in get_jiggle_modifiers(obj) if m.node_group and is_wiggy_group(m.node_group)]
         if not mods:
             self.report({'WARNING'}, "No Wiggy XPBD zones found on the active object.")
             return {'CANCELLED'}
@@ -5085,7 +5114,7 @@ def compute_physics_hash(cage_obj):
     """Deterministic hash of Jiggle Wiggy GN modifier inputs."""
     if not cage_obj:
         return "NO_OBJ"
-    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
+    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)), None)
     if not mod:
         return "NO_WIGGY_MOD"
     h = hashlib.sha256()
@@ -5277,7 +5306,7 @@ def is_jiggle_owned_cage(obj, bind_targets=None):
     if bind_targets is None:
         bind_targets = get_jiggle_cage_bind_targets()
     return obj in bind_targets and any(
-        m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'
+        m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)
         for m in obj.modifiers)
 
 
@@ -5290,7 +5319,7 @@ def get_jiggle_simulation_objects(context, obj=None):
     for o in objects:
         if not is_jiggle_owned_cage(o, bind_targets):
             continue
-        if any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in o.modifiers):
+        if any(m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group) for m in o.modifiers):
             if o not in sim_objs:
                 sim_objs.append(o)
     target = obj or context.active_object
@@ -5309,7 +5338,7 @@ def get_cage_bake_status(cage_obj):
     if not bake_time:
         return 'NOT_BAKED', (1, 250), 'PACKED', "Not baked"
 
-    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
+    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)), None)
     if not mod or not mod.bakes:
         return 'NOT_BAKED', (1, 250), 'PACKED', "Missing Wiggy modifier"
 
@@ -5355,7 +5384,7 @@ def check_cage_validity(cage_obj, context):
         cage_obj['_jiggle_outdated_reason'] = "Simulation not baked"
         return 'NOT_BAKED', "Simulation not baked"
     
-    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
+    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)), None)
     if not mod or not mod.bakes:
         cage_obj['_jiggle_status'] = 'NOT_BAKED'
         cage_obj['_jiggle_last_known_valid'] = False
@@ -5443,7 +5472,7 @@ def preflight_validate_bake(context, sim_objs, storage_mode, f_start, f_end):
     
     for o in sim_objs:
         for m in o.modifiers:
-            if m.type == 'NODES' and m.node_group and m.node_group.name != 'Wiggy 0.1':
+            if m.type == 'NODES' and m.node_group and not is_wiggy_group(m.node_group):
                 if any(node.type == 'SIMULATION_OUTPUT' for node in getattr(m.node_group, 'nodes', [])):
                     return False, f"Conflicting non-Jiggle simulation modifier found on '{o.name}'. Aborting to protect unrelated simulations."
     return True, "Preflight passed"
@@ -5522,7 +5551,7 @@ def cage_has_cache(cage_obj):
     if not cage_obj:
         return False
     for m in cage_obj.modifiers:
-        if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1':
+        if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group):
             if any(len(b.data_blocks) > 0 for b in m.bakes):
                 return True
     return False
@@ -5532,7 +5561,7 @@ def cage_disk_cache_dirs(cage_obj):
     """External cache directories this cage would write to, for cages stored on disk."""
     dirs = []
     for m in cage_obj.modifiers:
-        if m.type != 'NODES' or not m.node_group or m.node_group.name != 'Wiggy 0.1':
+        if m.type != 'NODES' or not m.node_group or not is_wiggy_group(m.node_group):
             continue
         if getattr(m, 'bake_target', None) != 'DISK':
             continue
@@ -5653,9 +5682,9 @@ def execute_cage_bake_step(cage_obj, context, storage_mode, disk_path, f_start, 
     This is not transactional: if Blender overwrites the cache and then fails, the previous
     cache is gone and only `jiggle_backup/` can restore it.
     """
-    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1'), None)
+    mod = next((m for m in cage_obj.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group)), None)
     if not mod:
-        msg = "Missing Wiggy 0.1 simulation modifier"
+        msg = "Missing Wiggy simulation modifier"
         cage_obj['_jiggle_last_bake_error'] = msg
         return False, msg
 
@@ -5893,7 +5922,7 @@ class JIGGLE_OT_rebake_all(Operator):
             return {'CANCELLED'}
 
         has_existing = any(
-            o.get('_jiggle_baked_at_timestamp') or any(len(b.data_blocks) > 0 for m in o.modifiers if m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for b in m.bakes)
+            o.get('_jiggle_baked_at_timestamp') or any(len(b.data_blocks) > 0 for m in o.modifiers if m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group) for b in m.bakes)
             for o in sim_objs
         )
         if has_existing and event is not None:
@@ -6349,7 +6378,7 @@ class VIEW3D_PT_jiggle_main(VIEW3D_PT_jiggle_base, Panel):
                 
                 s_inputs = getattr(getattr(active_mod, "properties", None), "inputs", None)
                 s2 = None
-                if active_mod.node_group and active_mod.node_group.name == 'Wiggy 0.1' and s_inputs and hasattr(s_inputs, "Socket_2"):
+                if active_mod.node_group and is_wiggy_group(active_mod.node_group) and s_inputs and hasattr(s_inputs, "Socket_2"):
                     s2 = s_inputs.Socket_2
                     attr_val = getattr(s2, "attribute_name", "")
                     if not attr_val or attr_val not in obj.vertex_groups:
@@ -6427,7 +6456,7 @@ class VIEW3D_PT_jiggle_main(VIEW3D_PT_jiggle_base, Panel):
             if settings.new_zone_vg:
                 for m in jiggle_mods:
                     s_in = getattr(getattr(m, "properties", None), "inputs", None)
-                    if m.node_group and m.node_group.name == 'Wiggy 0.1' and s_in and hasattr(s_in, "Socket_2"):
+                    if m.node_group and is_wiggy_group(m.node_group) and s_in and hasattr(s_in, "Socket_2"):
                         if getattr(s_in.Socket_2, "attribute_name", "") == settings.new_zone_vg:
                             vg_assigned_mod = m.name
                             break
@@ -6475,7 +6504,7 @@ class VIEW3D_PT_jiggle_presets(VIEW3D_PT_jiggle_base, Panel):
         obj = context.active_object
         mods = get_jiggle_modifiers(obj)
         settings = getattr(context.scene, 'jiggle_settings', None) if context.scene else None
-        return bool(settings and 0 <= settings.active_zone_index < len(mods) and mods[settings.active_zone_index].node_group and mods[settings.active_zone_index].node_group.name == 'Wiggy 0.1')
+        return bool(settings and 0 <= settings.active_zone_index < len(mods) and mods[settings.active_zone_index].node_group and is_wiggy_group(mods[settings.active_zone_index].node_group))
 
     def draw(self, context):
         layout = self.layout
@@ -6622,7 +6651,7 @@ class VIEW3D_PT_jiggle_dynamics(VIEW3D_PT_jiggle_base, Panel):
         mod = mods[idx]
         col = layout.column()
 
-        if mod.node_group.name == "Wiggy 0.1":
+        if is_wiggy_group(mod.node_group):
             col.prop(settings, "zone_softness", text="Softness (Freedom)", slider=True)
             col.prop(settings, "zone_mass", text="Mass / Inertia", slider=True)
             col.prop(settings, "zone_mass_by_area", text="Mass by Area (Even Weight)")
@@ -6652,7 +6681,7 @@ class VIEW3D_PT_jiggle_shape(VIEW3D_PT_jiggle_base, Panel):
             return False
         idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
-            return mods[idx].node_group.name == "Wiggy 0.1"
+            return is_wiggy_group(mods[idx].node_group)
         return False
 
     def draw(self, context):
@@ -6692,7 +6721,7 @@ class VIEW3D_PT_jiggle_collisions(VIEW3D_PT_jiggle_base, Panel):
         row.operator("jiggle.add_collider", text="Add Selected as Collider", icon='MOD_PHYSICS')
         row.operator("jiggle.add_wind", text="Add Wind", icon='FORCE_WIND')
 
-        if mod.node_group.name == "Wiggy 0.1":
+        if is_wiggy_group(mod.node_group):
             if s_inputs and hasattr(s_inputs, "Socket_7"):
                 col.prop(s_inputs.Socket_7, "value", text="Colliders Collection")
             col.prop(settings, "zone_thickness", text="Thickness", slider=True)
@@ -6723,7 +6752,7 @@ class VIEW3D_PT_jiggle_self_collision(VIEW3D_PT_jiggle_base, Panel):
             return False
         idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
-            return mods[idx].node_group.name == "Wiggy 0.1"
+            return is_wiggy_group(mods[idx].node_group)
         return False
 
     def draw(self, context):
@@ -6755,7 +6784,7 @@ class VIEW3D_PT_jiggle_forces(VIEW3D_PT_jiggle_base, Panel):
             return False
         idx = context.scene.jiggle_settings.active_zone_index
         if 0 <= idx < len(mods):
-            return mods[idx].node_group.name == "Wiggy 0.1"
+            return is_wiggy_group(mods[idx].node_group)
         return False
 
     def draw(self, context):
@@ -6869,7 +6898,7 @@ class VIEW3D_PT_jiggle_playback(VIEW3D_PT_jiggle_base, Panel):
 
         if mods and 0 <= idx < len(mods):
             mod = mods[idx]
-            if mod.node_group.name == "Wiggy 0.1":
+            if is_wiggy_group(mod.node_group):
                 s_inputs = getattr(mod.properties, "inputs", None) if hasattr(mod, "properties") else None
                 if s_inputs:
                     box = layout.box()
@@ -6897,7 +6926,7 @@ class VIEW3D_PT_jiggle_diagnostics(VIEW3D_PT_jiggle_base, Panel):
             return
 
         mods = get_jiggle_modifiers(obj)
-        sim_mods = [m for m in mods if getattr(m, "node_group", None) and m.node_group.name == "Wiggy 0.1"]
+        sim_mods = [m for m in mods if getattr(m, "node_group", None) and is_wiggy_group(m.node_group)]
 
         box = layout.box()
         box.label(text="Active Zones & Geometry:", icon='INFO')
@@ -7459,7 +7488,7 @@ class JIGGLE_OT_attach_clothing_proxy(Operator):
                     has_verts = len(existing_proxy.data.vertices) > 0
                     body_arm_obj = getattr(next((m for m in active_obj.modifiers if m.type == 'ARMATURE'), None), 'object', None)
                     has_arm = any(m.type == 'ARMATURE' and m.object == body_arm_obj for m in existing_proxy.modifiers)
-                    has_wiggy = any(m.type == 'NODES' and m.node_group and m.node_group.name == 'Wiggy 0.1' for m in existing_proxy.modifiers)
+                    has_wiggy = any(m.type == 'NODES' and m.node_group and is_wiggy_group(m.node_group) for m in existing_proxy.modifiers)
 
                     # Robust Fingerprint Validation (High 4)
                     match_body = existing_proxy.get('_jiggle_source_body') == active_obj.name
@@ -8115,7 +8144,7 @@ class JIGGLE_OT_pin_hair_roots(Operator):
         if mods and 0 <= settings.active_zone_index < len(mods):
             mod = mods[settings.active_zone_index]
             s_in = getattr(getattr(mod, "properties", None), "inputs", None)
-            if mod.node_group and mod.node_group.name == 'Wiggy 0.1' and s_in and hasattr(s_in, "Socket_2"):
+            if mod.node_group and is_wiggy_group(mod.node_group) and s_in and hasattr(s_in, "Socket_2"):
                 target_vg_name = getattr(s_in.Socket_2, "attribute_name", "")
 
         if not target_vg_name and getattr(settings, "new_zone_vg", ""):
@@ -8134,7 +8163,7 @@ class JIGGLE_OT_pin_hair_roots(Operator):
         if mods and 0 <= settings.active_zone_index < len(mods):
             target_mod = mods[settings.active_zone_index]
             s_in = getattr(getattr(target_mod, "properties", None), "inputs", None)
-            if target_mod.node_group and target_mod.node_group.name == 'Wiggy 0.1' and s_in and hasattr(s_in, "Socket_2") and not getattr(s_in.Socket_2, "attribute_name", ""):
+            if target_mod.node_group and is_wiggy_group(target_mod.node_group) and s_in and hasattr(s_in, "Socket_2") and not getattr(s_in.Socket_2, "attribute_name", ""):
                 try:
                     s_in.Socket_2.attribute_name = vg.name
                 except Exception:
@@ -8230,7 +8259,7 @@ class JIGGLE_OT_apply_action_safety(Operator):
         if not (0 <= settings.active_zone_index < len(mods)):
             return False
         mod = mods[settings.active_zone_index]
-        return bool(mod.node_group and mod.node_group.name == 'Wiggy 0.1')
+        return bool(mod.node_group and is_wiggy_group(mod.node_group))
 
     def execute(self, context):
         obj = context.active_object

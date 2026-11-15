@@ -57,20 +57,46 @@ The repeatable runtime checks live in `tests\runtime\`:
 | `test_viewport_qa.py`             | `poc_cage_xpbd_kasumi`   | rewind drift on the evaluated mesh, finite frames, followers, cage modifier |
 | `test_secondary_scene.py`         | any scene                | registration, operator availability, scene props   |
 | `test_clean_install_zip.py`       | the built ZIP            | install, byte parity, version agreement, operators |
+| `test_legacy_names.py`            | source tree only         | 2.x `Giggle_*` modifiers and groups are still discovered |
 | `test_cage_rebuild_preserves_clothing.py` | installed add-on + `poc_cage_xpbd_kasumi` | a garment's clothing Surface Deform survives cage generation and rebuild, cage discovery ignores bare clothing names |
+| `test_legacy_attach.py`           | installed add-on + `poc_cage_xpbd_kasumi` | re-attaching clothing leaves one bound Surface Deform, shape and deformation unchanged |
+| `test_wiggy_versions.py`          | source tree only         | `Wiggy 0.1` and `Wiggy 0.2.0` both work through presets, bake detection, cage lookup and the Socket_2 attribute path |
 
-`test_cage_rebuild_preserves_clothing.py` drives `bpy.ops.jiggle.*`, so the add-on must be installed
-and enabled in the profile that runs it: it needs the installed copy, not the source file. Run it
-without `--factory-startup`, which skips the user preferences that enable the extension:
+`test_wiggy_versions.py` imports the add-on from source and registers it itself, so it runs headless
+with `--factory-startup` and needs no installed profile:
+
+```
+blender -b --factory-startup --python-exit-code 1 --python tests/runtime/test_wiggy_versions.py
+```
+
+The source-level audit that stops hardcoded Wiggy group names creeping back is plain Python:
+
+```
+python tests/test_wiggy_name_audit.py            # audit jiggle_zone/
+python tests/test_wiggy_name_audit.py --selftest # prove it still detects a regression
+```
+
+`test_cage_rebuild_preserves_clothing.py` and `test_legacy_attach.py` drive `bpy.ops.jiggle.*`, so
+the add-on must be installed and enabled in the profile that runs them: they need the installed
+copy, not the source file. Run them without `--factory-startup`, which skips the user preferences
+that enable the extension:
 
 ```
 blender -b poc_cage_xpbd_kasumi.blend --python-exit-code 1 \
     --python tests/runtime/test_cage_rebuild_preserves_clothing.py
+blender -b poc_cage_xpbd_kasumi.blend --python-exit-code 1 \
+    --python tests/runtime/test_legacy_attach.py
 ```
 
-`run_tests.ps1` syncs the source into each installed profile before it runs its suites; run this
-script separately against that same profile, or add it to the suite list in `run_tests.ps1`.
-Verified on 5.2.2 LTS and 5.3.0 Beta.
+Installing the add-on also means the profile needs the assets the code asks for, including
+`Wiggy_0.2.0.blend`; a profile synced from an older ZIP fails `add_zone` with
+`Could not load node tree 'Wiggy 0.2.0' from assets`.
+
+`run_tests.ps1` runs every suite in the table on each installed Blender version, plus the name
+audit and its `--selftest` once (they need Python, not Blender). Before each version's suite it
+copies the source, the changelog and `jiggle_zone\assets\*.blend` into that profile, so a missing
+asset fails the run instead of hiding behind a stale install. Nothing in `tests\runtime\` needs to
+be invoked by hand. Verified on 5.2.2 LTS and 5.3.0 Beta.
 
 They exit non-zero on failure. A QA report is only meaningful if the script can fail — the earlier
 viewport script caught every exception and printed `PASS`, and measured `obj.data` (which no
