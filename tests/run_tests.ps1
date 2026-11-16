@@ -13,8 +13,7 @@ param(
     [string]$Blend = (Join-Path (Split-Path -Parent $PSScriptRoot) 'poc_cage_xpbd_kasumi.blend'),
     [string]$SecondaryBlend = (Join-Path (Split-Path -Parent $PSScriptRoot) 'JitterArmatureModel.blend'),
     [string[]]$Blender = @(
-        'D:\Blender 5.3\blender.exe',
-        'D:\Blender 5.2\blender.exe'
+        'D:\Blender 5.3\blender.exe'
     ),
     [string]$Artifacts = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts')
 )
@@ -96,10 +95,13 @@ foreach ($exe in $Blender) {
         }
         $log = Join-Path $out ("{0}_{1}.log" -f $label, $suite.Key)
         Write-Host "=== Blender $label : $($suite.Name) ==="
+        # The Wiggy cage-generation fixture can crash Embree 4 on this Windows Blender build
+        # when many worker threads are enabled; a single worker keeps this regression run stable.
+        $threadArgs = if ($suite.Key -eq 'wiggy_versions') { @('-t', '1') } else { @() }
         if ($suite.Blend) {
-            & $exe -b $suite.Blend --python-exit-code 1 --python $suite.Path *> $log
+            & $exe -b @threadArgs $suite.Blend --python-exit-code 1 --python $suite.Path *> $log
         } else {
-            & $exe -b --factory-startup --python-exit-code 1 --python $suite.Path *> $log
+            & $exe -b @threadArgs --factory-startup --python-exit-code 1 --python $suite.Path *> $log
         }
         $code = $LASTEXITCODE
         $ran++

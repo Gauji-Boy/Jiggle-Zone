@@ -91,18 +91,46 @@ def snapshot(mod, identifiers):
 class LayoutProbe:
     def __init__(self):
         self.properties = []
+        self.searches = []
+        self.labels = []
+        self.operators = []
 
     def column(self):
         return self
 
+    def box(self):
+        return self
+
+    def row(self, **_kwargs):
+        return self
+
     def prop(self, _data, identifier, **_kwargs):
         self.properties.append(identifier)
+
+    def prop_search(self, _data, identifier, search_data, search_property, **_kwargs):
+        self.searches.append((identifier, search_data, search_property))
+
+    def label(self, text="", **_kwargs):
+        self.labels.append(text)
+
+    def separator(self, **_kwargs):
+        pass
+
+    def operator(self, operator_id, **_kwargs):
+        self.operators.append(operator_id)
+        return SimpleNamespace()
 
 
 def draw_dynamics_properties():
     panel = SimpleNamespace(layout=LayoutProbe())
     g.VIEW3D_PT_jiggle_dynamics.draw(panel, bpy.context)
     return panel.layout.properties
+
+
+def draw_collision_properties():
+    panel = SimpleNamespace(layout=LayoutProbe())
+    g.VIEW3D_PT_jiggle_collisions.draw(panel, bpy.context)
+    return panel.layout
 
 
 def activate_zone(obj, mod):
@@ -191,6 +219,131 @@ check("0.2 receives the same values as 0.1", old_snapshot == new_snapshot,
 softness = new_snapshot.get("Socket_33", (None,))[0]
 check("0.2 softness matches the preset", abs(softness - preset["values"]["Socket_33"]) < 1e-4, softness)
 
+# --- general socket setter contracts ---------------------------------------------------------
+section("general socket setter contracts")
+collider_socket_contract = (
+    ("Socket_132", "Collider 1", "NodeSocketObject", None),
+    ("Socket_133", "Vertex Group 1", "NodeSocketString", ""),
+    ("Socket_134", "Collider 2", "NodeSocketObject", None),
+    ("Socket_135", "Vertex Group 2", "NodeSocketString", ""),
+    ("Socket_136", "Collider 3", "NodeSocketObject", None),
+    ("Socket_137", "Vertex Group 3", "NodeSocketString", ""),
+    ("Socket_138", "Collider 4", "NodeSocketObject", None),
+    ("Socket_139", "Vertex Group 4", "NodeSocketString", ""),
+)
+for identifier, expected_name, expected_type, expected_default in collider_socket_contract:
+    item = interface_socket(new_group, identifier)
+    check(f"{identifier} contract",
+          item is not None
+          and item.name == expected_name
+          and item.socket_type == expected_type
+          and item.default_value == expected_default,
+          None if item is None else
+          (item.name, item.socket_type, getattr(item, "default_value", None)))
+
+collider_probe = mesh_with_group("ColliderGroup", "ColliderProbe")
+object_socket = socket(new_zone, "Socket_132")
+check("object socket accepts a datablock",
+      g.set_mod_socket(new_zone, "Socket_132", value=collider_probe, sync_cage=False)
+      and object_socket.value == collider_probe,
+      getattr(object_socket, "value", None))
+before_no_value_write = object_socket.value
+g.set_mod_socket(new_zone, "Socket_132", sync_cage=False)
+check("omitted socket value leaves an object unchanged",
+      object_socket.value == before_no_value_write,
+      getattr(object_socket, "value", None))
+g.set_mod_socket(new_zone, "Socket_132", value=None, sync_cage=False)
+check("explicit None clears an object socket",
+      object_socket.value is None,
+      getattr(object_socket, "value", None))
+check("string socket accepts a string through the shared setter",
+      g.set_mod_socket(new_zone, "Socket_133", value="ColliderGroup", sync_cage=False)
+      and socket(new_zone, "Socket_133").value == "ColliderGroup",
+      getattr(socket(new_zone, "Socket_133"), "value", None))
+
+vector_interface = next(
+    (item for item in new_group.interface.items_tree
+     if getattr(item, "item_type", None) == "SOCKET"
+     and item.in_out == "INPUT"
+     and item.socket_type == "NodeSocketVector"),
+    None,
+)
+check("0.2 exposes a vector socket for setter regression", vector_interface is not None)
+if vector_interface is not None:
+    vector_socket = socket(new_zone, vector_interface.identifier)
+    tuple_result = g.set_mod_socket(
+        new_zone, vector_interface.identifier, value=(1.0, 2.0, 3.0), sync_cage=False
+    )
+    check("tuple writes still support vector sockets",
+          tuple_result and tuple(vector_socket.value) == (1.0, 2.0, 3.0),
+          tuple(vector_socket.value))
+    scalar_result = g.set_mod_socket(
+        new_zone, vector_interface.identifier, value=4.5, sync_cage=False
+    )
+    check("scalar writes still target the vector Z component",
+          scalar_result and tuple(vector_socket.value) == (0.0, 0.0, 4.5),
+          tuple(vector_socket.value))
+
+class LegacyModifier(dict):
+    node_group = None
+    id_data = None
+    properties = SimpleNamespace(inputs=None)
+
+
+legacy_fallback = LegacyModifier()
+check("ID-property fallback still writes scalar values",
+      g.set_mod_socket(legacy_fallback, "Socket_999", value=2.5)
+      and legacy_fallback["Socket_999"] == 2.5
+      and legacy_fallback["Socket_999_use_attribute"] == 0,
+      legacy_fallback)
+check("ID-property fallback still writes attributes",
+      g.set_mod_socket(legacy_fallback, "Socket_1000", attribute="ZoneGroup")
+      and legacy_fallback["Socket_1000_use_attribute"] == 1
+      and legacy_fallback["Socket_1000_attribute_name"] == "ZoneGroup",
+      legacy_fallback)
+legacy_fallback.node_group = SimpleNamespace(
+    interface=SimpleNamespace(items_tree=[
+        SimpleNamespace(
+            item_type="SOCKET",
+            in_out="INPUT",
+            identifier="Socket_Object",
+            socket_type="NodeSocketObject",
+        )
+    ])
+)
+check("ID-property fallback still assigns and explicitly clears object sockets",
+      g.set_mod_socket(legacy_fallback, "Socket_Object", value=collider_probe)
+      and legacy_fallback.get("Socket_Object") == collider_probe
+      and g.set_mod_socket(legacy_fallback, "Socket_Object", value=None)
+      and "Socket_Object" not in legacy_fallback,
+      legacy_fallback)
+
+collider_property_pairs = (
+    ("zone_collider_1", "zone_collider_group_1", "Socket_132", "Socket_133"),
+    ("zone_collider_2", "zone_collider_group_2", "Socket_134", "Socket_135"),
+    ("zone_collider_3", "zone_collider_group_3", "Socket_136", "Socket_137"),
+    ("zone_collider_4", "zone_collider_group_4", "Socket_138", "Socket_139"),
+)
+hash_collection = bpy.data.collections.new("PhysicsHashCollection")
+stable_value = getattr(g, "_stable_physics_hash_value", None)
+check("physics hashing exposes a stable datablock identity encoder",
+      callable(stable_value))
+if callable(stable_value):
+    check("object hash identity uses type, full name, and library path",
+          stable_value(collider_probe) == {
+              "datablock_type": "Object",
+              "name_full": "ColliderProbe",
+              "library_filepath": "",
+          },
+          stable_value(collider_probe))
+    check("collection hash identity uses type, full name, and library path",
+          stable_value(hash_collection) == {
+              "datablock_type": "Collection",
+              "name_full": "PhysicsHashCollection",
+              "library_filepath": "",
+          },
+          stable_value(hash_collection))
+
 # --- 0.2 return-wave controls are per modifier and survive save/reopen -------------------------
 section("return-wave controls")
 wave_properties = ("zone_return_wave", "zone_relax_time", "zone_decay")
@@ -237,6 +390,162 @@ cage_mod = cage.modifiers.new("Jiggle_Cage_XPBD", 'NODES')
 cage_mod.node_group = new_group
 g.set_mod_socket(new_zone, "Socket_2", attribute="Zone", sync_cage=False)
 g.set_mod_socket(cage_mod, "Socket_2", attribute="Zone", sync_cage=False)
+g.set_mod_socket(new_zone, "Socket_133", value="", sync_cage=False)
+g.set_mod_socket(cage_mod, "Socket_133", value="", sync_cage=False)
+
+section("multi-collider controls")
+supports_slots = getattr(g, "supports_wiggy_collider_slots", lambda _mod: False)
+check("0.2 supports all four collider slots", supports_slots(new_zone))
+check("0.1 does not support the new collider slots", not supports_slots(old_zone))
+for object_prop, group_prop, _object_socket_id, _group_socket_id in collider_property_pairs:
+    check(f"{object_prop} is registered", object_prop in settings.bl_rna.properties)
+    check(f"{group_prop} is registered", group_prop in settings.bl_rna.properties)
+
+collider_objects = [collider_probe]
+for index in range(2, 5):
+    collider_objects.append(
+        mesh_with_group(f"ColliderGroup{index}", f"Collider{index}")
+    )
+collider_probe.vertex_groups.new(name="SharedColliderGroup")
+activate_zone(body, new_zone)
+
+slot_props_available = all(
+    object_prop in settings.bl_rna.properties and group_prop in settings.bl_rna.properties
+    for object_prop, group_prop, _object_socket_id, _group_socket_id in collider_property_pairs
+)
+if slot_props_available:
+    for index, ((object_prop, group_prop, object_socket_id, group_socket_id),
+                collider_obj) in enumerate(zip(collider_property_pairs, collider_objects), 1):
+        setattr(settings, object_prop, collider_obj)
+        group_name = "ColliderGroup" if index == 1 else f"ColliderGroup{index}"
+        setattr(settings, group_prop, group_name)
+        check(f"slot {index} object writes its modifier socket",
+              g.get_mod_socket(new_zone, object_socket_id) == collider_obj,
+              getattr(g.get_mod_socket(new_zone, object_socket_id), "name", None))
+        check(f"slot {index} group writes its modifier socket",
+              g.get_mod_socket(new_zone, group_socket_id) == group_name,
+              g.get_mod_socket(new_zone, group_socket_id))
+        check(f"slot {index} object syncs to the cage",
+              g.get_mod_socket(cage_mod, object_socket_id) == collider_obj,
+              getattr(g.get_mod_socket(cage_mod, object_socket_id), "name", None))
+        check(f"slot {index} group syncs to the cage",
+              g.get_mod_socket(cage_mod, group_socket_id) == group_name,
+              g.get_mod_socket(cage_mod, group_socket_id))
+
+    for index, (object_prop, group_prop, object_socket_id, group_socket_id) in enumerate(
+            collider_property_pairs, 1):
+        setattr(settings, object_prop, None)
+        setattr(settings, group_prop, "")
+        check(f"slot {index} object can be cleared",
+              g.get_mod_socket(new_zone, object_socket_id) is None
+              and g.get_mod_socket(cage_mod, object_socket_id) is None)
+        check(f"slot {index} group can be cleared",
+              g.get_mod_socket(new_zone, group_socket_id) == ""
+              and g.get_mod_socket(cage_mod, group_socket_id) == "")
+
+    for index, ((object_prop, group_prop, _object_socket_id, _group_socket_id),
+                collider_obj) in enumerate(zip(collider_property_pairs, collider_objects), 1):
+        setattr(settings, object_prop, collider_obj)
+        setattr(settings, group_prop, "ColliderGroup" if index == 1 else f"ColliderGroup{index}")
+
+collision_layout = draw_collision_properties()
+check("0.2 collision panel exposes all four object controls",
+      {pair[0] for pair in collider_property_pairs} <= set(collision_layout.properties),
+      collision_layout.properties)
+check("0.2 collision panel searches each collider's vertex groups",
+      {pair[1] for pair in collider_property_pairs}
+      <= {search[0] for search in collision_layout.searches},
+      [search[0] for search in collision_layout.searches])
+check("collision panel offers slot-aware assignment",
+      "jiggle.assign_collider_slot" in collision_layout.operators,
+      collision_layout.operators)
+
+assign_slot_operator = getattr(bpy.ops.jiggle, "assign_collider_slot", None)
+check("slot-aware assignment operator is registered", assign_slot_operator is not None)
+if assign_slot_operator is not None:
+    activate_zone(body, new_zone)
+    collider_probe.select_set(True)
+    assign_result = assign_slot_operator(slot_index=1)
+    collider_node_group = bpy.data.node_groups.get("Collider")
+    check("slot assignment operator finishes", assign_result == {'FINISHED'}, assign_result)
+    check("slot assignment adds the Collider modifier",
+          any(m.type == 'NODES' and m.node_group == collider_node_group
+              for m in collider_probe.modifiers))
+    check("slot assignment does not write the collider collection",
+          g.get_mod_socket(new_zone, "Socket_7") is None)
+    duplicate_slot = assign_slot_operator(slot_index=2)
+    check("one collider cannot be assigned through two individual slots",
+          duplicate_slot == {'CANCELLED'}
+          and g.get_mod_socket(new_zone, "Socket_134") == collider_objects[1],
+          duplicate_slot)
+
+    collection_result = bpy.ops.jiggle.add_collider()
+    collider_collection = g.get_mod_socket(new_zone, "Socket_7")
+    check("existing Add Selected workflow still uses Socket_7",
+          collection_result == {'FINISHED'}
+          and collider_collection is not None
+          and collider_collection.all_objects.get(collider_probe.name) == collider_probe,
+          getattr(collider_collection, "name", None))
+    duplicate_layout = draw_collision_properties()
+    check("duplicate collection-and-slot assignment is warned",
+          any("also in" in label for label in duplicate_layout.labels),
+          duplicate_layout.labels)
+    duplicate_slot = assign_slot_operator(slot_index=2)
+    check("slot assignment refuses a collider already in Socket_7",
+          duplicate_slot == {'CANCELLED'}
+          and g.get_mod_socket(new_zone, "Socket_134") == collider_objects[1],
+          duplicate_slot)
+    check("duplicate prevention leaves the shared collection untouched",
+          collider_collection.all_objects.get(collider_probe.name) == collider_probe
+          and g.get_mod_socket(new_zone, "Socket_7") == collider_collection)
+    g.set_mod_socket(new_zone, "Socket_7", value=None)
+    check("Socket_7 collection input still clears explicitly",
+          g.get_mod_socket(new_zone, "Socket_7") is None)
+
+if slot_props_available:
+    settings.zone_collider_group_1 = "MissingColliderGroup"
+    stale_group_layout = draw_collision_properties()
+    check("missing vertex groups remain visible and are warned about",
+          g.get_mod_socket(new_zone, "Socket_133") == "MissingColliderGroup"
+          and any("not present" in label for label in stale_group_layout.labels),
+          stale_group_layout.labels)
+    settings.zone_collider_group_1 = "ColliderGroup"
+    settings.zone_collider_group_1 = ""
+    empty_group_layout = draw_collision_properties()
+    check("an empty vertex group stays empty without a stale-group warning",
+          g.get_mod_socket(new_zone, "Socket_133") == ""
+          and not any("not present" in label for label in empty_group_layout.labels),
+          empty_group_layout.labels)
+    settings.zone_collider_group_1 = "ColliderGroup"
+
+    collider_probe.vertex_groups.new(name="GroupToDelete")
+    settings.zone_collider_group_1 = "GroupToDelete"
+    collider_probe.vertex_groups.remove(collider_probe.vertex_groups["GroupToDelete"])
+    deleted_group_layout = draw_collision_properties()
+    check("deleting a vertex group retains and warns about its stale name",
+          g.get_mod_socket(new_zone, "Socket_133") == "GroupToDelete"
+          and settings.zone_collider_group_1 == "GroupToDelete"
+          and any("not present" in label for label in deleted_group_layout.labels),
+          deleted_group_layout.labels)
+    settings.zone_collider_group_1 = "ColliderGroup"
+
+    deleted_collider = mesh_with_group("DeletedGroup", "DeletedCollider")
+    activate_zone(body, new_zone)
+    settings.zone_collider_4 = deleted_collider
+    settings.zone_collider_group_4 = "DormantGroup"
+    bpy.data.objects.remove(deleted_collider, do_unlink=True)
+    g.sync_settings_from_zone_mod(settings, new_zone)
+    check("deleted collider references resolve to an empty slot",
+          g.get_mod_socket(new_zone, "Socket_138") is None
+          and settings.zone_collider_4 is None,
+          (g.get_mod_socket(new_zone, "Socket_138"),
+           getattr(settings.zone_collider_4, "name", None)))
+    check("group name remains dormant rather than widening to whole object",
+          g.get_mod_socket(new_zone, "Socket_139") == "DormantGroup"
+          and settings.zone_collider_group_4 == "DormantGroup",
+          (g.get_mod_socket(new_zone, "Socket_139"), settings.zone_collider_group_4))
+    settings.zone_collider_group_4 = ""
+    activate_zone(body, new_zone)
 
 if all(prop in settings.bl_rna.properties for prop in wave_properties):
     # Simulate a valid baked cache so the real status helper can verify invalidation.
@@ -255,6 +564,22 @@ if all(prop in settings.bl_rna.properties for prop in wave_properties):
           g.get_cage_bake_status(cache_view)[0] == 'BAKED',
           g.get_cage_bake_status(cache_view))
 
+    if slot_props_available:
+        previous_modified_at = body.get("_jiggle_settings_modified_at")
+        g._update_collider_mirror(settings, bpy.context, 1)
+        g._update_collider_mirror(settings, bpy.context, 1, group_socket=True)
+        check("unchanged collider mirrors do not write or invalidate",
+              body.get("_jiggle_settings_modified_at") == previous_modified_at
+              and g.get_mod_socket(new_zone, "Socket_132") == settings.zone_collider_1)
+
+        previous_collider_2 = settings.zone_collider_2
+        settings.zone_collider_2 = None
+        check("changing a collider slot invalidates the baked result",
+              g.get_cage_bake_status(cache_view)[0] == 'OUTDATED'
+              and g.get_mod_socket(cage_mod, "Socket_134") is None,
+              g.get_cage_bake_status(cache_view))
+        settings.zone_collider_2 = previous_collider_2
+
     for prop_name, identifier, value in zip(wave_properties, wave_sockets, wave_values):
         setattr(settings, prop_name, value)
         check(f"changing {prop_name} writes {identifier}",
@@ -269,6 +594,12 @@ if all(prop in settings.bl_rna.properties for prop in wave_properties):
           g.get_cage_bake_status(cache_view))
 
     # Existing presets intentionally omit the new sockets; applying one must preserve them.
+    collider_values_before_preset = tuple(
+        g.get_mod_socket(new_zone, socket_id)
+        for _object_prop, _group_prop, object_socket_id, group_socket_id in collider_property_pairs
+        for socket_id in (object_socket_id, group_socket_id)
+    )
+    activate_zone(body, new_zone)
     preset_result = bpy.ops.jiggle.apply_preset(preset="REAL_BREASTS_NATURAL")
     after_preset = tuple(g.get_mod_socket(new_zone, identifier) for identifier in wave_sockets)
     check("preset reapplication succeeds", preset_result == {'FINISHED'}, preset_result)
@@ -276,11 +607,30 @@ if all(prop in settings.bl_rna.properties for prop in wave_properties):
           all(abs(float(actual) - expected) < 1e-5
               for actual, expected in zip(after_preset, wave_values)),
           after_preset)
+    collider_values_after_preset = tuple(
+        g.get_mod_socket(new_zone, socket_id)
+        for _object_prop, _group_prop, object_socket_id, group_socket_id in collider_property_pairs
+        for socket_id in (object_socket_id, group_socket_id)
+    )
+    check("preset reapplication preserves individual collider settings",
+          collider_values_after_preset == collider_values_before_preset,
+          tuple(getattr(value, "name", value) for value in collider_values_after_preset))
 
     second_zone = body.modifiers.new("Jiggle_Second_Modern", 'NODES')
     second_zone.node_group = new_group
     g.set_mod_socket(second_zone, "Socket_2", attribute="Zone_Second", sync_cage=False)
     activate_zone(body, second_zone)
+    check("switching zones mirrors the second zone's empty collider slots",
+          all(getattr(settings, object_prop) is None
+              and getattr(settings, group_prop) == ""
+              for object_prop, group_prop, _object_socket, _group_socket in collider_property_pairs))
+    settings.zone_collider_1 = collider_probe
+    settings.zone_collider_group_1 = "SharedColliderGroup"
+    check("two zones can share one collider with independent group choices",
+          g.get_mod_socket(second_zone, "Socket_132") == collider_probe
+          and g.get_mod_socket(second_zone, "Socket_133") == "SharedColliderGroup"
+          and g.get_mod_socket(new_zone, "Socket_132") == collider_probe
+          and g.get_mod_socket(new_zone, "Socket_133") == "ColliderGroup")
     second_values = (0.82, 3.2, 0.17)
     for prop_name, identifier, value in zip(wave_properties, wave_sockets, second_values):
         setattr(settings, prop_name, value)
@@ -295,12 +645,24 @@ if all(prop in settings.bl_rna.properties for prop in wave_properties):
           all(abs(float(actual) - expected) < 1e-5
               for actual, expected in zip(first_values_after_switch, wave_values)),
           first_values_after_switch)
+    check("switching zones restores the first zone's collider mirror",
+          settings.zone_collider_1 == collider_probe
+          and settings.zone_collider_group_1 == "ColliderGroup"
+          and g.get_mod_socket(new_zone, "Socket_133") == "ColliderGroup")
 
 # Wiggy 0.1 must not expose or acquire any of the 0.2-only sockets.
 activate_zone(body, old_zone)
 legacy_ui = draw_dynamics_properties()
 check("0.1 dynamics UI hides wave controls",
       not (set(wave_properties) & set(legacy_ui)), legacy_ui)
+legacy_collision_ui = draw_collision_properties()
+check("0.1 collision UI hides individual collider controls",
+      not ({pair[0] for pair in collider_property_pairs}
+           & set(legacy_collision_ui.properties))
+      and not ({pair[1] for pair in collider_property_pairs}
+               & {search[0] for search in legacy_collision_ui.searches})
+      and "jiggle.assign_collider_slot" not in legacy_collision_ui.operators,
+      legacy_collision_ui.properties)
 if all(prop in settings.bl_rna.properties for prop in wave_properties):
     settings.zone_decay = 0.91
 check("0.1 has no wave socket or fallback ID-property write",
@@ -382,6 +744,10 @@ check("0.1 group survives alongside 0.2", "Wiggy 0.1" in bpy.data.node_groups)
 # Modifier input values, rather than scene-wide UI values, must persist in the .blend.
 if all(prop in settings.bl_rna.properties for prop in wave_properties):
     activate_zone(body, new_zone)
+    g.set_mod_socket(new_zone, "Socket_132", value=collider_probe, sync_cage=False)
+    g.set_mod_socket(new_zone, "Socket_133", value="ColliderGroup", sync_cage=False)
+    g.set_mod_socket(new_zone, "Socket_7", value=hash_collection, sync_cage=False)
+    physics_hash_before = g.compute_physics_hash(body)
     with tempfile.TemporaryDirectory(prefix="jiggle_wave_settings_", dir=ROOT) as temp_dir:
         blend_path = os.path.join(temp_dir, "wave_settings.blend")
         bpy.ops.wm.save_as_mainfile(filepath=blend_path)
@@ -392,10 +758,25 @@ if all(prop in settings.bl_rna.properties for prop in wave_properties):
             g.get_mod_socket(reopened_zone, identifier) if reopened_zone else None
             for identifier in wave_sockets
         )
+        reopened_collider_values = tuple(
+            g.get_mod_socket(reopened_zone, identifier) if reopened_zone else None
+            for identifier in ("Socket_132", "Socket_133", "Socket_7")
+        )
         check("save/reopen restores all three wave values",
               all(actual is not None and abs(float(actual) - expected) < 1e-5
                   for actual, expected in zip(reopened_values, wave_values)),
               reopened_values)
+        check("save/reopen restores object, string, and collection sockets",
+              reopened_collider_values[0] is not None
+              and reopened_collider_values[0].name == "ColliderProbe"
+              and reopened_collider_values[1] == "ColliderGroup"
+              and reopened_collider_values[2] is not None
+              and reopened_collider_values[2].name == "PhysicsHashCollection",
+              tuple(getattr(value, "name", value) for value in reopened_collider_values))
+        physics_hash_after = g.compute_physics_hash(reopened_body)
+        check("unchanged datablock inputs keep the physics fingerprint after reopen",
+              physics_hash_before == physics_hash_after,
+              (physics_hash_before, physics_hash_after))
 
 g.unregister()
 

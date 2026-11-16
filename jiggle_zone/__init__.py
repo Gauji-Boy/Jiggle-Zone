@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Jiggle Zone",
     "author": "VOZHD1122 & RoboDrozd / Jiggle Zone",
-    "version": (3, 2, 0),
+    "version": (3, 3, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Sidebar > Jiggle Zone",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",
@@ -2591,6 +2591,7 @@ def sync_settings_from_zone_mod(settings, mod):
     if not settings or not mod:
         return
     try:
+        _sync_collider_mirrors_from_mod(settings, mod)
         meta = get_mod_jiggle_metadata(mod)
         if not meta:
             return
@@ -2702,6 +2703,110 @@ def get_mod_socket_prop(mod, socket_id):
 WIGGY_WAVE_SOCKET_IDS = ("Socket_141", "Socket_142", "Socket_143")
 
 
+WIGGY_COLLIDER_SOCKET_PAIRS = (
+    ("Socket_132", "Socket_133"),
+    ("Socket_134", "Socket_135"),
+    ("Socket_136", "Socket_137"),
+    ("Socket_138", "Socket_139"),
+)
+_SOCKET_VALUE_UNSET = object()
+_COLLIDER_MIRROR_SYNC_GUARD = set()
+
+
+def _collider_mirror_guard_key(settings):
+    try:
+        return settings.as_pointer()
+    except (AttributeError, ReferenceError, RuntimeError):
+        return id(settings)
+
+
+def _syncing_collider_mirrors(settings):
+    return _collider_mirror_guard_key(settings) in _COLLIDER_MIRROR_SYNC_GUARD
+
+
+def _set_collider_mirror(settings, prop_name, value):
+    if prop_name not in settings.bl_rna.properties:
+        return
+    try:
+        if getattr(settings, prop_name) == value:
+            return
+    except (AttributeError, ReferenceError, RuntimeError):
+        pass
+    setattr(settings, prop_name, value)
+
+
+def _sync_collider_mirrors_from_mod(settings, mod):
+    if not settings:
+        return
+    if supports_wiggy_collider_slots(mod):
+        values = []
+        for object_socket, group_socket in WIGGY_COLLIDER_SOCKET_PAIRS:
+            collider = get_mod_socket(mod, object_socket)
+            group_name = get_mod_socket(mod, group_socket)
+            values.extend((collider if isinstance(collider, bpy.types.Object) else None,
+                           str(group_name or "")))
+    else:
+        values = [value for _ in WIGGY_COLLIDER_SOCKET_PAIRS for value in (None, "")]
+
+    guard_key = _collider_mirror_guard_key(settings)
+    already_guarded = guard_key in _COLLIDER_MIRROR_SYNC_GUARD
+    if not already_guarded:
+        _COLLIDER_MIRROR_SYNC_GUARD.add(guard_key)
+    try:
+        for index, (object_socket, group_socket) in enumerate(WIGGY_COLLIDER_SOCKET_PAIRS, 1):
+            _set_collider_mirror(settings, f"zone_collider_{index}", values[(index - 1) * 2])
+            _set_collider_mirror(settings, f"zone_collider_group_{index}", values[(index - 1) * 2 + 1])
+    finally:
+        if not already_guarded:
+            _COLLIDER_MIRROR_SYNC_GUARD.discard(guard_key)
+
+
+def _active_zone_for_settings(settings, context):
+    obj = getattr(context, "active_object", None) if context else None
+    if not obj or getattr(obj, "type", None) != 'MESH':
+        return None
+    try:
+        mods = get_jiggle_modifiers(obj)
+        index = int(settings.active_zone_index)
+        return mods[index] if 0 <= index < len(mods) else None
+    except (AttributeError, ReferenceError, RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _update_collider_mirror(self, context, slot_index, group_socket=False):
+    if _syncing_collider_mirrors(self):
+        return
+    try:
+        mod = _active_zone_for_settings(self, context)
+        if not supports_wiggy_collider_slots(mod):
+            return
+
+        object_socket, name_socket = WIGGY_COLLIDER_SOCKET_PAIRS[slot_index - 1]
+        if group_socket:
+            prop_name = f"zone_collider_group_{slot_index}"
+            socket_id = name_socket
+            value = str(getattr(self, prop_name, "") or "")
+        else:
+            prop_name = f"zone_collider_{slot_index}"
+            socket_id = object_socket
+            value = getattr(self, prop_name, None)
+
+        if get_mod_socket(mod, socket_id) == value:
+            return
+        if set_mod_socket(mod, socket_id, value=value):
+            mark_mod_customized(mod)
+        else:
+            _sync_collider_mirrors_from_mod(self, mod)
+    except (AttributeError, ReferenceError, RuntimeError, TypeError, ValueError):
+        return
+
+
+def _make_collider_mirror_update(slot_index, group_socket=False):
+    def update(self, context):
+        _update_collider_mirror(self, context, slot_index, group_socket)
+    return update
+
+
 def supports_wiggy_wave_settings(mod):
     return bool(
         mod
@@ -2711,21 +2816,47 @@ def supports_wiggy_wave_settings(mod):
     )
 
 
-def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
+def supports_wiggy_collider_slots(mod):
+    return bool(
+        mod
+        and getattr(getattr(mod, "node_group", None), "name", None) == WIGGY_NEW_GROUP
+        and all(get_mod_socket_prop(mod, socket_id) is not None
+                for pair in WIGGY_COLLIDER_SOCKET_PAIRS
+                for socket_id in pair)
+    )
+
+
+def _get_node_group_socket_type(mod, socket_id):
+    interface = getattr(getattr(mod, "node_group", None), "interface", None)
+    if not interface:
+        return None
+    return next(
+        (item.socket_type for item in interface.items_tree
+         if getattr(item, "item_type", None) == "SOCKET"
+         and getattr(item, "in_out", None) == "INPUT"
+         and getattr(item, "identifier", None) == socket_id),
+        None,
+    )
+
+
+def set_mod_socket(mod, socket_id, value=_SOCKET_VALUE_UNSET, attribute=None, sync_cage=True):
     """Set a Geometry Nodes modifier input; return False when the socket is unavailable."""
     is_wiggy = bool(getattr(mod, "node_group", None) and is_wiggy_group(mod.node_group))
     # Wiggy Socket_2 is its vertex-group attribute, never a numeric value.
     if is_wiggy and socket_id == 'Socket_2':
         if isinstance(value, str):
-            attribute, value = value, None
+            attribute, value = value, _SOCKET_VALUE_UNSET
         elif attribute is None:
             return False
 
+    has_value = value is not _SOCKET_VALUE_UNSET
     properties = getattr(mod, 'properties', None)
     inputs = getattr(properties, 'inputs', None) if properties else None
     socket = getattr(inputs, socket_id, None) if inputs is not None else None
 
     if inputs is not None and socket is None:
+        return False
+    if not has_value and attribute is None:
         return False
 
     applied = False
@@ -2737,13 +2868,21 @@ def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
                 if not hasattr(socket, 'attribute_name'):
                     return False
                 socket.attribute_name = str(attribute)
-            elif value is not None:
+            elif has_value:
                 if hasattr(socket, 'type'):
                     socket.type = 'VALUE'
                 if not hasattr(socket, 'value'):
                     return False
                 current = socket.value
-                if hasattr(current, '__len__') and not isinstance(value, (tuple, list)):
+                if value is None:
+                    socket_type = _get_node_group_socket_type(mod, socket_id)
+                    if (socket_type not in {"NodeSocketObject", "NodeSocketCollection"}
+                            and not isinstance(current, bpy.types.ID)):
+                        return False
+                    socket.value = None
+                elif isinstance(current, str):
+                    socket.value = str(value)
+                elif hasattr(current, '__len__') and not isinstance(value, (tuple, list)):
                     # Handle scalar assigned to vector socket (e.g. gravity Z-acceleration)
                     if len(current) == 3:
                         current[0] = 0.0
@@ -2772,7 +2911,15 @@ def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
             if attribute is not None:
                 mod[f"{socket_id}_use_attribute"] = 1
                 mod[f"{socket_id}_attribute_name"] = str(attribute)
-            elif value is not None:
+            elif has_value and value is None:
+                socket_type = _get_node_group_socket_type(mod, socket_id)
+                current = mod.get(socket_id, None) if hasattr(mod, "get") else None
+                if (socket_type not in {"NodeSocketObject", "NodeSocketCollection"}
+                        and not isinstance(current, bpy.types.ID)):
+                    return False
+                mod.pop(socket_id, None)
+                mod[f"{socket_id}_use_attribute"] = 0
+            elif has_value:
                 mod[f"{socket_id}_use_attribute"] = 0
                 mod[socket_id] = value
             else:
@@ -2781,7 +2928,7 @@ def set_mod_socket(mod, socket_id, value=None, attribute=None, sync_cage=True):
         except (TypeError, ValueError, AttributeError, KeyError, RuntimeError):
             return False
 
-    if applied and sync_cage:
+    if applied and sync_cage and (has_value or attribute is not None):
         sync_socket_to_cage(mod, socket_id, value=value, attribute=attribute)
 
     return applied
@@ -3296,6 +3443,54 @@ class JiggleSceneSettings(PropertyGroup):
         name="Active Zone Index",
         default=0,
         update=update_active_zone_index
+    )
+    zone_collider_1: PointerProperty(
+        name="Collider 1",
+        description="Object used by the first individual collider slot",
+        type=bpy.types.Object,
+        update=_make_collider_mirror_update(1)
+    )
+    zone_collider_group_1: StringProperty(
+        name="Vertex Group 1",
+        description="Optional vertex group on Collider 1; a missing name is retained and warned about",
+        default="",
+        update=_make_collider_mirror_update(1, group_socket=True)
+    )
+    zone_collider_2: PointerProperty(
+        name="Collider 2",
+        description="Object used by the second individual collider slot",
+        type=bpy.types.Object,
+        update=_make_collider_mirror_update(2)
+    )
+    zone_collider_group_2: StringProperty(
+        name="Vertex Group 2",
+        description="Optional vertex group on Collider 2; a missing name is retained and warned about",
+        default="",
+        update=_make_collider_mirror_update(2, group_socket=True)
+    )
+    zone_collider_3: PointerProperty(
+        name="Collider 3",
+        description="Object used by the third individual collider slot",
+        type=bpy.types.Object,
+        update=_make_collider_mirror_update(3)
+    )
+    zone_collider_group_3: StringProperty(
+        name="Vertex Group 3",
+        description="Optional vertex group on Collider 3; a missing name is retained and warned about",
+        default="",
+        update=_make_collider_mirror_update(3, group_socket=True)
+    )
+    zone_collider_4: PointerProperty(
+        name="Collider 4",
+        description="Object used by the fourth individual collider slot",
+        type=bpy.types.Object,
+        update=_make_collider_mirror_update(4)
+    )
+    zone_collider_group_4: StringProperty(
+        name="Vertex Group 4",
+        description="Optional vertex group on Collider 4; a missing name is retained and warned about",
+        default="",
+        update=_make_collider_mirror_update(4, group_socket=True)
     )
     # --- SIMULATION CACHE & BAKING SETTINGS (MILESTONE 3) ---
     bake_storage_mode: EnumProperty(
@@ -3859,7 +4054,7 @@ def touch_zone_modified(mod):
                 pass
 
 
-def sync_socket_to_cage(mod, socket_id, value=None, attribute=None):
+def sync_socket_to_cage(mod, socket_id, value=_SOCKET_VALUE_UNSET, attribute=None):
     """If zone has an active cage proxy, synchronize modifier input to the cage solver."""
     obj = getattr(mod, 'id_data', None)
     if not obj or obj.type != 'MESH':
@@ -4805,6 +5000,28 @@ class JIGGLE_OT_solo_zone(Operator):
         return {'FINISHED'}
 
 
+def get_collider_slot_warning(mod, collider, slot_index):
+    """Explain when an individual collider would be processed through another path too."""
+    if not mod or not collider:
+        return ""
+    try:
+        collection = get_mod_socket(mod, "Socket_7")
+        if collection and collection.all_objects.get(collider.name) == collider:
+            return f"Collider '{collider.name}' is also in the Socket_7 collection."
+    except (AttributeError, ReferenceError, RuntimeError, TypeError):
+        pass
+    for index, (object_socket, _group_socket) in enumerate(WIGGY_COLLIDER_SOCKET_PAIRS, 1):
+        if index == slot_index:
+            continue
+        try:
+            other = get_mod_socket(mod, object_socket)
+            if other == collider:
+                return f"Collider '{collider.name}' is also assigned to slot {index}."
+        except (AttributeError, ReferenceError, RuntimeError, TypeError):
+            continue
+    return ""
+
+
 class JIGGLE_OT_add_collider(Operator):
     bl_idname = "jiggle.add_collider"
     bl_label = "Set as Collider"
@@ -4865,6 +5082,96 @@ class JIGGLE_OT_add_collider(Operator):
             added_count += 1
 
         self.report({'INFO'}, f"Configured {added_count} collider(s) in '{col_name}' and connected to '{mod.name}'")
+        return {'FINISHED'}
+
+
+class JIGGLE_OT_assign_collider_slot(Operator):
+    bl_idname = "jiggle.assign_collider_slot"
+    bl_label = "Assign Collider Slot"
+    bl_description = "Assign the selected mesh to one individual collider slot without changing Socket_7"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    slot_index: IntProperty(
+        name="Collider Slot",
+        description="Individual collider slot to assign",
+        default=1,
+        min=1,
+        max=4
+    )
+
+    @classmethod
+    def poll(cls, context):
+        active_obj = getattr(context, "active_object", None)
+        settings = getattr(getattr(context, "scene", None), "jiggle_settings", None)
+        if not active_obj or not settings:
+            return False
+        mods = get_jiggle_modifiers(active_obj)
+        index = settings.active_zone_index
+        if not (0 <= index < len(mods) and supports_wiggy_collider_slots(mods[index])):
+            return False
+        selected = [obj for obj in getattr(context, "selected_objects", [])
+                    if obj != active_obj]
+        return len(selected) == 1 and selected[0].type == 'MESH'
+
+    def execute(self, context):
+        active_obj = getattr(context, "active_object", None)
+        settings = getattr(getattr(context, "scene", None), "jiggle_settings", None)
+        mod = _active_zone_for_settings(settings, context) if settings else None
+        if not supports_wiggy_collider_slots(mod):
+            self.report({'WARNING'}, "Select a zone that supports individual collider slots.")
+            return {'CANCELLED'}
+        if not 1 <= self.slot_index <= len(WIGGY_COLLIDER_SOCKET_PAIRS):
+            self.report({'ERROR'}, "Choose a collider slot from 1 to 4.")
+            return {'CANCELLED'}
+
+        selected = [obj for obj in getattr(context, "selected_objects", [])
+                    if obj != active_obj]
+        if len(selected) != 1 or selected[0].type != 'MESH':
+            self.report({'WARNING'}, "Select exactly one mesh collider in addition to the active zone mesh.")
+            return {'CANCELLED'}
+        collider = selected[0]
+        warning = get_collider_slot_warning(mod, collider, self.slot_index)
+        if warning:
+            self.report({'WARNING'}, warning + " Remove it from the other collision path first.")
+            return {'CANCELLED'}
+
+        collider_group = ensure_nodetree("Collider")
+        if not collider_group:
+            self.report({'ERROR'}, "Could not load the Collider node group from the bundled asset.")
+            return {'CANCELLED'}
+
+        collider_mod = next(
+            (item for item in collider.modifiers
+             if item.type == 'NODES' and item.node_group == collider_group),
+            None,
+        )
+        created_modifier = collider_mod is None
+        if created_modifier:
+            try:
+                collider_mod = collider.modifiers.new(name="Collider", type='NODES')
+                collider_mod.node_group = collider_group
+            except (AttributeError, RuntimeError, TypeError) as exc:
+                self.report({'ERROR'}, f"Could not configure '{collider.name}' as a collider: {exc}")
+                return {'CANCELLED'}
+
+        socket_id = WIGGY_COLLIDER_SOCKET_PAIRS[self.slot_index - 1][0]
+        current = get_mod_socket(mod, socket_id)
+        if current != collider:
+            if not set_mod_socket(mod, socket_id, value=collider):
+                if created_modifier:
+                    try:
+                        collider.modifiers.remove(collider_mod)
+                    except (ReferenceError, RuntimeError, TypeError):
+                        pass
+                self.report({'ERROR'}, f"Could not assign '{collider.name}' to collider slot {self.slot_index}.")
+                return {'CANCELLED'}
+            mark_mod_customized(mod)
+        elif created_modifier:
+            # The operator changed the evaluated collider even though the object reference was already set.
+            mark_mod_customized(mod)
+
+        _sync_collider_mirrors_from_mod(settings, mod)
+        self.report({'INFO'}, f"Assigned '{collider.name}' to collider slot {self.slot_index}.")
         return {'FINISHED'}
 
 
@@ -5141,6 +5448,18 @@ def compute_armature_hash(arm_obj):
     return h.hexdigest()
 
 
+def _stable_physics_hash_value(value):
+    """Return a session-independent identity for datablock-valued GN inputs."""
+    if not isinstance(value, bpy.types.ID):
+        return value
+    library = getattr(value, "library", None)
+    return {
+        "datablock_type": value.bl_rna.identifier,
+        "name_full": value.name_full,
+        "library_filepath": library.filepath if library else "",
+    }
+
+
 def compute_physics_hash(cage_obj):
     """Deterministic hash of Jiggle Wiggy GN modifier inputs."""
     if not cage_obj:
@@ -5156,6 +5475,12 @@ def compute_physics_hash(cage_obj):
                 sock = getattr(s_in, identifier)
                 val = getattr(sock, "value", None)
                 if val is not None:
+                    if isinstance(val, bpy.types.ID):
+                        val = json.dumps(
+                            _stable_physics_hash_value(val),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
                     h.update(f"{identifier}={val};".encode('utf-8'))
                 att = getattr(sock, "attribute_name", None)
                 if att is not None:
@@ -6759,6 +7084,61 @@ class VIEW3D_PT_jiggle_collisions(VIEW3D_PT_jiggle_base, Panel):
         if is_wiggy_group(mod.node_group):
             if s_inputs and hasattr(s_inputs, "Socket_7"):
                 col.prop(s_inputs.Socket_7, "value", text="Colliders Collection")
+            if supports_wiggy_collider_slots(mod):
+                try:
+                    _sync_collider_mirrors_from_mod(settings, mod)
+                    slots_box = col.box()
+                    slots_box.label(text="Individual Collider Slots", icon='MOD_PHYSICS')
+                    for slot_index, (object_socket, group_socket) in enumerate(
+                            WIGGY_COLLIDER_SOCKET_PAIRS, 1):
+                        object_prop = f"zone_collider_{slot_index}"
+                        group_prop = f"zone_collider_group_{slot_index}"
+                        collider = get_mod_socket(mod, object_socket)
+                        slot_row = slots_box.row(align=True)
+                        slot_row.prop(settings, object_prop, text=f"Collider {slot_index}")
+                        if collider:
+                            slot_row.prop_search(
+                                settings, group_prop, collider, "vertex_groups",
+                                text="Vertex Group"
+                            )
+                        else:
+                            slot_row.prop(settings, group_prop, text="Vertex Group")
+                        assign = slot_row.operator(
+                            "jiggle.assign_collider_slot",
+                            text="Assign",
+                            icon='EYEDROPPER'
+                        )
+                        assign.slot_index = slot_index
+
+                        group_name = str(get_mod_socket(mod, group_socket) or "")
+                        if group_name and (
+                                not collider
+                                or getattr(collider, "vertex_groups", None) is None
+                                or group_name not in collider.vertex_groups):
+                            slots_box.alert = True
+                            if collider:
+                                warning = (
+                                    f"Vertex group '{group_name}' is not present "
+                                    f"on '{collider.name}'."
+                                )
+                            else:
+                                warning = (
+                                    f"Vertex group '{group_name}' is not present "
+                                    "because this collider slot is empty."
+                                )
+                            slots_box.label(text=warning, icon='ERROR')
+
+                        duplicate_warning = get_collider_slot_warning(
+                            mod, collider, slot_index
+                        )
+                        if duplicate_warning:
+                            slots_box.alert = True
+                            slots_box.label(text=duplicate_warning, icon='ERROR')
+                except Exception as exc:
+                    warning_box = col.box()
+                    warning_box.alert = True
+                    warning_box.label(text="Collider slot controls could not be drawn.", icon='ERROR')
+                    print(f"[Jiggle] Collider panel draw warning: {exc}")
             col.prop(settings, "zone_thickness", text="Thickness", slider=True)
             col.prop(settings, "zone_friction", text="Friction", slider=True)
             col.separator()
@@ -8551,6 +8931,7 @@ classes = (
     JIGGLE_OT_toggle_mute,
     JIGGLE_OT_solo_zone,
     JIGGLE_OT_add_collider,
+    JIGGLE_OT_assign_collider_slot,
     JIGGLE_OT_add_wind,
     JIGGLE_OT_autotune_substeps,
     JIGGLE_OT_reset_sim,

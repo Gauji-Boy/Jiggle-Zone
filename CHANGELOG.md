@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.3.0 — Wiggy multi-collider support
+
+### Added
+- Added four per-zone collider object and optional vertex-group slots for Wiggy 0.2.0 while
+  retaining the existing `Socket_7` collection workflow and hiding slot controls for Wiggy 0.1.
+- Added selected-mesh slot assignment with warnings for duplicate processing through a slot and
+  the collection input.
+
+### Fixed
+- Scene collider controls now mirror each active zone's modifier inputs without cross-zone writes
+  or unnecessary bake invalidation.
+- Socket writes distinguish omitted values, explicit object/collection clears, strings, and
+  numeric/vector values.
+- Physics fingerprints encode datablock type, full name and linked-library filepath so object and
+  collection inputs remain stable across save/reopen.
+
 ## 3.2.0 — Wiggy 0.2.0 wave controls
 
 ### Added
