@@ -27,6 +27,7 @@ EXPECTED_ENTRIES = (
     "jiggle_zone/CHANGELOG.md",
     "jiggle_zone/README.md",
     "jiggle_zone/__init__.py",
+    "jiggle_zone/assets/BackFaces.blend",
     "jiggle_zone/assets/JiggleV2.blend",
     "jiggle_zone/assets/Wiggy_0.1.blend",
     "jiggle_zone/assets/Wiggy_0.2.0.blend",

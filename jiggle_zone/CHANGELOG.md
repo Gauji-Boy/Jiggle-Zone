@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.4.0 - Collider back-face filter
+
+### Added
+- Added **Mark Back Faces** / **Clear Back Faces** for collider objects. Selected faces are
+  excluded from collision through a bundled `Back Faces` Geometry Nodes modifier that writes
+  the solver's own exclusion attribute, so the mesh, its vertices, vertex groups and the
+  `Collider` modifier are never modified.
+- Added a **Collider Back Faces** sidebar panel showing how many faces are excluded, and why a
+  mask is currently disabled.
+
+### Fixed
+- A stale face mask can no longer be applied to different geometry. The collider's topology is
+  recorded exactly (every corner index, every face's corner count, and the four domain sizes),
+  so any change of face order or connectivity is caught even when every count stays the same.
+  The check runs in depsgraph_update_pre, before the evaluation that would use the mask, and a
+  mask that no longer matches is muted in the modifier stack. The reason is shown in the panel,
+  and the mask is kept so restoring the original topology re-enables it.
+- A mask is now fail-closed: when no usable topology record exists, when the record came from an
+  older sampled format, or when the check itself fails, the filter is disabled instead of being
+  applied to faces the record cannot vouch for.
+- Face selection is read from the live Edit Mode BMesh, so **Mark Back Faces** uses the faces
+  selected in Edit Mode and the mask is written against the mesh the modifier stack evaluates.
+- Boundary colliders, objects without a `Collider` modifier, empty selections and linked
+  objects are refused instead of writing a filter that could not work.
+
 ## 3.3.0 — Wiggy multi-collider support
 
 ### Added

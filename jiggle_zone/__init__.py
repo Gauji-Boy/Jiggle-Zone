@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Jiggle Zone",
     "author": "VOZHD1122 & RoboDrozd / Jiggle Zone",
-    "version": (3, 3, 0),
+    "version": (3, 4, 0),
     "blender": (5, 2, 0),
     "location": "3D Viewport > Sidebar > Jiggle Zone",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",
@@ -17,6 +17,7 @@ import json
 import re
 import hashlib
 import shutil
+from array import array
 import time
 from bpy.props import (
     StringProperty,
@@ -2479,6 +2480,7 @@ ASSET_GROUP_FILES = {
     "Wiggy Wind": "Wiggy_0.2.0.blend",
     "Jiggle": "JiggleV2.blend",
     "Jiggle + Deformation": "JiggleV2.blend",
+    "Back Faces": "BackFaces.blend",
 }
 
 
@@ -5206,6 +5208,532 @@ class JIGGLE_OT_add_wind(Operator):
         return {'FINISHED'}
 
 
+# ==============================================================================
+# BACK-FACE FILTER (non-destructive per-face collider exclusion)
+# ==============================================================================
+
+BACK_FACE_GROUP = "Back Faces"
+BACK_FACE_MASK_SOCKET = "Face Mask"
+BACK_FACE_SIGNATURE_KEY = "_jiggle_back_face_signature"
+BACK_FACE_STALE_KEY = "_jiggle_back_face_stale"
+
+
+def get_collider_modifier(obj):
+    """Return the bundled `Collider` Geometry Nodes modifier on obj, or None."""
+    if not obj or obj.type != 'MESH':
+        return None
+    for mod in obj.modifiers:
+        if mod.type == 'NODES' and getattr(getattr(mod, "node_group", None), "name", None) == "Collider":
+            return mod
+    return None
+
+
+def get_back_face_modifier(obj):
+    """Return the back-face filter modifier on obj, or None."""
+    if not obj or obj.type != 'MESH':
+        return None
+    for mod in obj.modifiers:
+        if mod.type == 'NODES' and getattr(getattr(mod, "node_group", None), "name", None) == BACK_FACE_GROUP:
+            return mod
+    return None
+
+
+def get_back_face_socket_id(group):
+    """Resolve the `Face Mask` socket identifier from the group interface (never hardcoded)."""
+    interface = getattr(group, "interface", None)
+    if not interface:
+        return None
+    for item in interface.items_tree:
+        if (getattr(item, "item_type", None) == "SOCKET"
+                and getattr(item, "in_out", None) == "INPUT"
+                and getattr(item, "name", None) == BACK_FACE_MASK_SOCKET):
+            return item.identifier
+    return None
+
+
+def get_back_face_mask(mod):
+    """Return the stored mask string: one `1`/`0` entry per face index."""
+    if not mod:
+        return ""
+    socket_id = get_back_face_socket_id(getattr(mod, "node_group", None))
+    if not socket_id:
+        return ""
+    value = get_mod_socket(mod, socket_id)
+    return value if isinstance(value, str) else ""
+
+
+def set_back_face_mask(mod, mask):
+    socket_id = get_back_face_socket_id(getattr(mod, "node_group", None))
+    if not socket_id:
+        return False
+    # No cage sync: this modifier belongs to a collider, not to a zone.
+    return set_mod_socket(mod, socket_id, value=str(mask), sync_cage=False)
+
+
+def back_face_mask_bits(mask):
+    return [entry == "1" for entry in str(mask or "").split(",") if entry != ""]
+
+
+def back_face_signature(mesh):
+    """Exact order-sensitive record of the mesh topology.
+
+    Vertex positions are excluded, so moving a vertex never looks like a topology change.
+    Everything that defines face identity is included: the four domain sizes plus a hash of
+    every corner's vertex index and every face's corner count, in order. A face reorder or a
+    connectivity change that keeps all counts identical still changes the hash, so this is a
+    complete check, not a sample.
+
+    The bulk read is a `foreach_get` into a C array and one hash over it, so the cost stays
+    proportional to the corner count rather than to Python loop overhead.
+    """
+    try:
+        face_count = len(mesh.polygons)
+        loop_count = len(mesh.loops)
+        vertex_count = len(mesh.vertices)
+        edge_count = len(mesh.edges)
+    except (AttributeError, ReferenceError, RuntimeError, TypeError):
+        return "2:unreadable"
+    if not face_count:
+        return f"2:{face_count}:{loop_count}:{vertex_count}:{edge_count}:0"
+    try:
+        corners = array('i', bytes(4 * loop_count))
+        totals = array('i', bytes(4 * face_count))
+        mesh.loops.foreach_get("vertex_index", corners)
+        mesh.polygons.foreach_get("loop_total", totals)
+        digest = hashlib.blake2b(digest_size=8)
+        digest.update(corners)
+        digest.update(totals)
+        tail = digest.hexdigest()
+    except (AttributeError, ReferenceError, RuntimeError, TypeError, ValueError):
+        # Fall back to walking the data in Python; slower, same answer.
+        try:
+            corners = [loop.vertex_index for loop in mesh.loops]
+            totals = [poly.loop_total for poly in mesh.polygons]
+        except (AttributeError, ReferenceError, RuntimeError, TypeError):
+            return "2:unreadable"
+        digest = hashlib.blake2b(digest_size=8)
+        digest.update(repr(corners).encode("ascii", "replace"))
+        digest.update(repr(totals).encode("ascii", "replace"))
+        tail = digest.hexdigest()
+    return f"2:{face_count}:{loop_count}:{vertex_count}:{edge_count}:{tail}"
+
+
+def back_face_signature_counts(signature):
+    """Return (faces, loops, vertices, edges) from a signature string, or None."""
+    parts = str(signature or "").split(":")
+    if len(parts) != 6 or parts[0] != "2":
+        return None
+    try:
+        return tuple(int(value) for value in parts[1:5])
+    except ValueError:
+        return None
+
+
+def back_face_face_selection(obj):
+    """Per-face selection flags, read from the live BMesh while in Edit Mode.
+
+    `mesh.polygons[].select` is only reliable outside Edit Mode: while editing, the selection
+    lives in the BMesh and the mesh copy can lag behind. Returns None if unreadable.
+    """
+    if not obj or obj.type != 'MESH' or not obj.data:
+        return None
+    try:
+        if getattr(obj, "mode", 'OBJECT') == 'EDIT':
+            import bmesh
+            bm = bmesh.from_edit_mesh(obj.data)
+            return [bool(face.select) for face in bm.faces]
+        return [bool(poly.select) for poly in obj.data.polygons]
+    except (AttributeError, ReferenceError, RuntimeError, TypeError):
+        return None
+
+
+def back_face_status(obj, verify=True):
+    """Return (state, marked_faces, face_count).
+
+    state: 'none' | 'empty' | 'ok' | 'count_changed' | 'reordered' | 'unverified'.
+
+    `verify=False` skips the exact topology comparison and reports the last state the safety
+    pass recorded instead; the panel uses it because the comparison reads the whole mesh.
+    """
+    if not obj or obj.type != 'MESH' or not obj.data:
+        return ('none', 0, 0)
+    mod = get_back_face_modifier(obj)
+    if not mod:
+        return ('none', 0, 0)
+    face_count = len(obj.data.polygons)
+    mask = get_back_face_mask(mod)
+    if not mask:
+        return ('empty', 0, face_count)
+    # Counted on the string itself: this runs on every panel redraw, and building one Python
+    # bool per face costs milliseconds on a dense collider.
+    marked = mask.count("1")
+    if marked == 0:
+        return ('empty', 0, face_count)
+    if mask.count(",") + 1 != face_count:
+        return ('count_changed', marked, face_count)
+    stored = obj.get(BACK_FACE_SIGNATURE_KEY)
+    if not isinstance(stored, str) or back_face_signature_counts(stored) is None:
+        # No usable record of the topology this mask was made from: fail closed, never assume
+        # the mask still describes this mesh.
+        return ('unverified', marked, face_count)
+    if not verify:
+        flagged = obj.get(BACK_FACE_STALE_KEY)
+        if flagged in ('count_changed', 'reordered', 'unverified'):
+            return (flagged, marked, face_count)
+        return ('ok', marked, face_count)
+    current = back_face_signature(obj.data)
+    if back_face_signature_counts(current) is None:
+        return ('unverified', marked, face_count)
+    if stored != current:
+        return ('reordered', marked, face_count)
+    return ('ok', marked, face_count)
+
+
+def get_zones_using_collider(collider):
+    """Return every Wiggy zone modifier that references collider, in any supported way."""
+    zones = []
+    if not collider:
+        return zones
+    for obj in bpy.data.objects:
+        for mod in get_jiggle_modifiers(obj):
+            try:
+                collection = get_mod_socket(mod, 'Socket_7')
+                if collection and collection.all_objects.get(collider.name) == collider:
+                    zones.append(mod)
+                    continue
+                if any(get_mod_socket(mod, socket_id) == collider
+                       for socket_id, _group_socket in WIGGY_COLLIDER_SOCKET_PAIRS):
+                    zones.append(mod)
+            except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                continue
+    return zones
+
+
+def set_back_face_modifier_enabled(mod, enabled):
+    """Mute or unmute the filter without touching the stored mask."""
+    changed = False
+    for attr in ("show_viewport", "show_render"):
+        try:
+            if getattr(mod, attr) != enabled:
+                setattr(mod, attr, enabled)
+                changed = True
+        except (AttributeError, ReferenceError, RuntimeError, TypeError):
+            continue
+    return changed
+
+
+_BACK_FACE_GUARD_BUSY = False
+# Cheap gate so the per-update handler is free in scenes that never used the feature.
+_BACK_FACE_ANY_MASK = False
+
+
+def refresh_back_face_gate():
+    """Enable the per-update pass only when the open file actually carries back-face data.
+
+    Called once at registration and at every file load. It is deliberately a scan of the current
+    file, not a permanent True: a scene that never used the feature must not pay for the pass.
+    Once the gate has been raised by a mark in this session it stays up, so undoing that mark
+    cannot leave a restored mask unchecked.
+    """
+    global _BACK_FACE_ANY_MASK
+    active = False
+    try:
+        objects = bpy.data.objects
+        for obj in objects:
+            try:
+                if (BACK_FACE_SIGNATURE_KEY in obj or BACK_FACE_STALE_KEY in obj
+                        or (obj.type == 'MESH' and obj.modifiers
+                            and get_back_face_modifier(obj) is not None)):
+                    active = True
+                    break
+            except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                continue
+    except (AttributeError, RuntimeError, TypeError):
+        # Extension installation calls register() before bpy.data is fully available.
+        # The gate stays off; the next load_post or mark will raise it when needed.
+        pass
+    _BACK_FACE_ANY_MASK = active
+    return active
+
+
+def check_back_face_topology(obj):
+    """Disable a Back Faces modifier whose mask no longer describes this mesh.
+
+    Returns True when the modifier state changed. The mask string itself is kept, so
+    restoring the topology re-enables it. Anything the feature cannot verify counts as stale:
+    an unknown mask must never stay active.
+    """
+    global _BACK_FACE_GUARD_BUSY
+    if _BACK_FACE_GUARD_BUSY:
+        return False
+    try:
+        mod = get_back_face_modifier(obj)
+        if not mod or not obj.data or not get_back_face_mask(mod):
+            return False
+        state = back_face_status(obj)[0]
+    except Exception:
+        # Could not read the mesh or the modifier: fail closed.
+        state = 'unverified'
+        try:
+            mod = get_back_face_modifier(obj)
+        except Exception:
+            return False
+    stale = state in ('count_changed', 'reordered', 'unverified')
+    flagged = obj.get(BACK_FACE_STALE_KEY)
+    if stale:
+        if flagged == state and not mod.show_viewport:
+            return False
+    elif not flagged:
+        return False
+    _BACK_FACE_GUARD_BUSY = True
+    try:
+        changed = set_back_face_modifier_enabled(mod, not stale)
+        if stale:
+            obj[BACK_FACE_STALE_KEY] = state
+        else:
+            del obj[BACK_FACE_STALE_KEY]
+    finally:
+        _BACK_FACE_GUARD_BUSY = False
+    return changed
+
+
+def back_face_safety_pass(objects=None):
+    """Mute every stale back-face mask.
+
+    Geometry Nodes evaluates inside the depsgraph, and writes made from
+    depsgraph_update_post are discarded, so a mask invalidated by a collider edit would still
+    be applied once. `jiggle_back_face_pre_guard` runs this pass before that evaluation
+    instead; frame change, render and save are kept as extra entry points.
+    """
+    if objects is None:
+        # The gate is raised by the first mark and by every file load, so a session that never
+        # used the feature pays one boolean check per depsgraph update instead of a scan.
+        # The modifier itself is part of the test: a mask whose topology record was lost must
+        # still be found and muted.
+        candidates = []
+        for obj in bpy.data.objects:
+            try:
+                if BACK_FACE_SIGNATURE_KEY in obj or BACK_FACE_STALE_KEY in obj:
+                    candidates.append(obj)
+                    continue
+                if obj.type != 'MESH':
+                    continue
+                mods = obj.modifiers
+                if mods and get_back_face_modifier(obj) is not None:
+                    candidates.append(obj)
+            except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                continue
+    else:
+        candidates = objects
+    changed = 0
+    for obj in candidates:
+        try:
+            if check_back_face_topology(obj):
+                changed += 1
+        except Exception:
+            # Anything that stops the check from finishing must not leave the filter on.
+            try:
+                mod = get_back_face_modifier(obj)
+                if mod and (mod.show_viewport or mod.show_render):
+                    set_back_face_modifier_enabled(mod, False)
+                    obj[BACK_FACE_STALE_KEY] = 'unverified'
+                    changed += 1
+            except Exception:
+                continue
+    return changed
+
+
+@bpy.app.handlers.persistent
+def jiggle_back_face_pre_guard(*_args):
+    """Mute a stale mask *before* the depsgraph evaluates it.
+
+    Geometry Nodes runs during depsgraph evaluation, and Blender discards property writes
+    made in depsgraph_update_post, so a mask invalidated by a collider edit used to be
+    applied once before any Python code could stop it. depsgraph_update_pre runs before that
+    evaluation and its writes persist, so a same-count face reorder can never reach collision
+    with the previous mask.
+
+    The handler runs on every depsgraph update, so a scene that never used the feature pays
+    one boolean check.
+    """
+    if not _BACK_FACE_ANY_MASK:
+        return
+    try:
+        back_face_safety_pass()
+    except Exception:
+        # Last resort: a pass that cannot finish must not leave a possibly stale mask active.
+        _mute_all_back_faces()
+
+
+def _mute_all_back_faces():
+    """Disable every back-face filter that can still be reached (fail closed)."""
+    for obj in bpy.data.objects:
+        try:
+            mod = get_back_face_modifier(obj)
+            if mod and (mod.show_viewport or mod.show_render):
+                set_back_face_modifier_enabled(mod, False)
+                # Record why, so the normal pass can re-enable the filter once the topology
+                # can be verified again.
+                obj[BACK_FACE_STALE_KEY] = 'unverified'
+        except Exception:
+            continue
+
+
+@bpy.app.handlers.persistent
+def jiggle_back_face_frame_guard(*_args):
+    try:
+        back_face_safety_pass()
+    except Exception:
+        _mute_all_back_faces()
+
+
+class JIGGLE_OT_mark_back_faces(Operator):
+    bl_idname = "jiggle.mark_back_faces"
+    bl_label = "Mark Back Faces"
+    bl_description = ("Exclude the selected collider faces from collision without "
+                      "changing the collider mesh")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = getattr(context, "active_object", None)
+        return bool(obj and obj.type == 'MESH')
+
+    def execute(self, context):
+        global _BACK_FACE_GUARD_BUSY
+        obj = context.active_object
+        if obj.library or obj.override_library:
+            self.report({'ERROR'}, f"'{obj.name}' is linked or overridden. Make it local first.")
+            return {'CANCELLED'}
+        collider_mod = get_collider_modifier(obj)
+        if not collider_mod:
+            self.report({'ERROR'}, f"'{obj.name}' has no Collider modifier.")
+            return {'CANCELLED'}
+        if get_mod_socket(collider_mod, 'Socket_6'):
+            self.report({'ERROR'},
+                        f"'{obj.name}' is a boundary collider. Back faces cannot be marked on it.")
+            return {'CANCELLED'}
+        mesh = obj.data
+        selection = back_face_face_selection(obj)
+        if selection is None:
+            self.report({'ERROR'}, f"Could not read the face selection of '{obj.name}'.")
+            return {'CANCELLED'}
+        if getattr(obj, "mode", 'OBJECT') == 'EDIT':
+            # The mask is indexed by the evaluated mesh, so flush the live BMesh first and use
+            # that mesh's own face order. Otherwise a mark made in Edit Mode could be written
+            # against a topology the modifier stack will never see.
+            try:
+                import bmesh
+                bmesh.update_edit_mesh(mesh)
+            except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                pass
+            if len(mesh.polygons) != len(selection):
+                selection = [bool(poly.select) for poly in mesh.polygons]
+        face_count = len(selection)
+        if not face_count:
+            self.report({'ERROR'}, f"'{obj.name}' has no faces.")
+            return {'CANCELLED'}
+        selected = sum(1 for flag in selection if flag)
+        if not selected:
+            self.report({'WARNING'}, "Select the faces to exclude in Edit Mode first.")
+            return {'CANCELLED'}
+
+        group = ensure_nodetree(BACK_FACE_GROUP)
+        if not group:
+            self.report({'ERROR'},
+                        "Could not load the 'Back Faces' node group from the bundled asset.")
+            return {'CANCELLED'}
+
+        mod = get_back_face_modifier(obj)
+        created = mod is None
+        try:
+            if created:
+                mod = obj.modifiers.new(name=BACK_FACE_GROUP, type='NODES')
+            if mod.node_group != group:
+                mod.node_group = group
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            if created and mod:
+                try:
+                    obj.modifiers.remove(mod)
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
+            self.report({'ERROR'}, f"Could not add the back-face filter: {exc}")
+            return {'CANCELLED'}
+
+        # The filter must run before the solver's Collider modifier.
+        try:
+            names = [item.name for item in obj.modifiers]
+            collider_index = names.index(collider_mod.name)
+            mod_index = names.index(mod.name)
+            if mod_index != collider_index - 1:
+                obj.modifiers.move(mod_index, collider_index - 1
+                                   if mod_index < collider_index else collider_index)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
+
+        mask = ",".join("1" if flag else "0" for flag in selection)
+        if not set_back_face_mask(mod, mask):
+            if created:
+                try:
+                    obj.modifiers.remove(mod)
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
+            self.report({'ERROR'}, "Could not write the face mask into the filter modifier.")
+            return {'CANCELLED'}
+
+        _BACK_FACE_GUARD_BUSY = True
+        try:
+            obj[BACK_FACE_SIGNATURE_KEY] = back_face_signature(mesh)
+            if BACK_FACE_STALE_KEY in obj:
+                del obj[BACK_FACE_STALE_KEY]
+            set_back_face_modifier_enabled(mod, True)
+        finally:
+            _BACK_FACE_GUARD_BUSY = False
+        global _BACK_FACE_ANY_MASK
+        _BACK_FACE_ANY_MASK = True
+
+        for zone in get_zones_using_collider(obj):
+            touch_zone_modified(zone)
+
+        self.report({'INFO'},
+                    f"Excluded {selected} of {face_count} faces of '{obj.name}' from collision")
+        return {'FINISHED'}
+
+
+class JIGGLE_OT_clear_back_faces(Operator):
+    bl_idname = "jiggle.clear_back_faces"
+    bl_label = "Clear Back Faces"
+    bl_description = ("Remove the back-face filter from this collider. Nothing else is changed")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = getattr(context, "active_object", None)
+        return bool(obj and obj.type == 'MESH' and get_back_face_modifier(obj))
+
+    def execute(self, context):
+        obj = context.active_object
+        mod = get_back_face_modifier(obj)
+        if not mod:
+            self.report({'WARNING'}, f"'{obj.name}' has no back-face filter.")
+            return {'CANCELLED'}
+        for zone in get_zones_using_collider(obj):
+            touch_zone_modified(zone)
+        try:
+            obj.modifiers.remove(mod)
+        except (AttributeError, RuntimeError, TypeError):
+            self.report({'ERROR'}, f"Could not remove the back-face filter from '{obj.name}'.")
+            return {'CANCELLED'}
+        for key in (BACK_FACE_SIGNATURE_KEY, BACK_FACE_STALE_KEY):
+            try:
+                if key in obj:
+                    del obj[key]
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+        self.report({'INFO'}, f"Cleared back-face exclusion on '{obj.name}'")
+        return {'FINISHED'}
+
+
 class JIGGLE_OT_autotune_substeps(Operator):
     bl_idname = "jiggle.autotune_substeps"
     bl_label = "Auto-Tune Substeps for FPS"
@@ -7053,6 +7581,62 @@ class VIEW3D_PT_jiggle_shape(VIEW3D_PT_jiggle_base, Panel):
         col.prop(settings, "zone_stretching", text="Stretching", slider=True)
         col.prop(settings, "zone_bending", text="Bending", slider=True)
         col.prop(settings, "zone_edge_fade", text="Edge Fade (Rings)")
+
+
+class VIEW3D_PT_jiggle_back_faces(VIEW3D_PT_jiggle_base, Panel):
+    bl_idname = "VIEW3D_PT_jiggle_back_faces"
+    bl_label = "Collider Back Faces"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = getattr(context, "active_object", None)
+        return bool(obj and obj.type == 'MESH'
+                    and (get_collider_modifier(obj) or get_back_face_modifier(obj)))
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+        try:
+            state, marked, face_count = back_face_status(obj, verify=False)
+        except (AttributeError, ReferenceError, RuntimeError, TypeError):
+            return
+
+        box = layout.box()
+        col = box.column(align=True)
+        col.operator("jiggle.mark_back_faces", text="Mark Back Faces", icon='MOD_MASK')
+        col.operator("jiggle.clear_back_faces", text="Clear Back Faces", icon='X')
+        col.label(text="Select faces in Edit Mode, then mark.", icon='INFO')
+
+        collider_mod = get_collider_modifier(obj)
+        if collider_mod and get_mod_socket(collider_mod, 'Socket_6'):
+            box.label(text="Boundary collider: back faces cannot be marked.", icon='ERROR')
+            return
+
+        if state == 'none':
+            box.label(text="No back-face filter on this collider")
+            return
+
+        if state == 'empty':
+            box.label(text=f"Back faces: 0 of {face_count}")
+            return
+
+        stale = state in ('count_changed', 'reordered', 'unverified')
+        row = box.column(align=True)
+        if stale:
+            row.alert = True
+        row.label(text=f"Back faces: {marked} of {face_count}", icon='ERROR' if stale else 'CHECKMARK')
+        mod = get_back_face_modifier(obj)
+        if stale:
+            if state == 'count_changed':
+                row.label(text="Stale mask: the collider's face count changed.")
+            elif state == 'reordered':
+                row.label(text="Stale mask: the collider's faces were reordered.")
+            else:
+                row.label(text="Unverified mask: no topology record for this mesh.")
+            row.label(text="Filter disabled. Mark the faces again.")
+        elif mod and not mod.show_viewport:
+            row.label(text="Filter is muted in the modifier stack.")
 
 
 class VIEW3D_PT_jiggle_collisions(VIEW3D_PT_jiggle_base, Panel):
@@ -8933,6 +9517,8 @@ classes = (
     JIGGLE_OT_add_collider,
     JIGGLE_OT_assign_collider_slot,
     JIGGLE_OT_add_wind,
+    JIGGLE_OT_mark_back_faces,
+    JIGGLE_OT_clear_back_faces,
     JIGGLE_OT_autotune_substeps,
     JIGGLE_OT_reset_sim,
     JIGGLE_OT_clear_sim_cache,
@@ -8956,6 +9542,7 @@ classes = (
     VIEW3D_PT_jiggle_dynamics,
     VIEW3D_PT_jiggle_shape,
     VIEW3D_PT_jiggle_collisions,
+    VIEW3D_PT_jiggle_back_faces,
     VIEW3D_PT_jiggle_self_collision,
     VIEW3D_PT_jiggle_forces,
     VIEW3D_PT_jiggle_playback,
@@ -9041,6 +9628,10 @@ def _migrate_legacy_scene_settings(scene):
 
 @bpy.app.handlers.persistent
 def jiggle_migrate_legacy_on_load(*_args):
+    # A newly opened file may carry masks, so decide from the file whether the per-update pass
+    # is needed. This also runs once at registration, for a scene opened before the add-on was
+    # enabled.
+    refresh_back_face_gate()
     try:
         if not bpy.data.scenes:
             return
@@ -9062,6 +9653,13 @@ def register():
         bpy.app.handlers.render_pre.append(render_pre_cache_check)
     if jiggle_migrate_legacy_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(jiggle_migrate_legacy_on_load)
+    if jiggle_back_face_pre_guard not in bpy.app.handlers.depsgraph_update_pre:
+        bpy.app.handlers.depsgraph_update_pre.append(jiggle_back_face_pre_guard)
+    for handler_list in (bpy.app.handlers.frame_change_pre,
+                         bpy.app.handlers.render_pre,
+                         bpy.app.handlers.save_pre):
+        if jiggle_back_face_frame_guard not in handler_list:
+            handler_list.append(jiggle_back_face_frame_guard)
     bpy.types.Scene.jiggle_settings = PointerProperty(type=JiggleSceneSettings)
     bpy.types.Collection.jiggle_show_render = BoolProperty(
         name="Show in Viewport & Render",
@@ -9080,6 +9678,20 @@ def register():
     jiggle_migrate_legacy_on_load()
 
 def unregister():
+    for handler_list in (bpy.app.handlers.frame_change_pre,
+                         bpy.app.handlers.render_pre,
+                         bpy.app.handlers.save_pre,
+                         bpy.app.handlers.depsgraph_update_pre):
+        if jiggle_back_face_frame_guard in handler_list:
+            try:
+                handler_list.remove(jiggle_back_face_frame_guard)
+            except Exception:
+                pass
+    if jiggle_back_face_pre_guard in bpy.app.handlers.depsgraph_update_pre:
+        try:
+            bpy.app.handlers.depsgraph_update_pre.remove(jiggle_back_face_pre_guard)
+        except Exception:
+            pass
     if jiggle_migrate_legacy_on_load in bpy.app.handlers.load_post:
         try:
             bpy.app.handlers.load_post.remove(jiggle_migrate_legacy_on_load)

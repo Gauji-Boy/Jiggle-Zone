@@ -81,6 +81,7 @@ foreach ($exe in $Blender) {
             @{ Key = 'install'; Name = 'clean install from zip'; Path = (Join-Path $PSScriptRoot 'runtime\test_clean_install_zip.py'); Blend = $null },
             @{ Key = 'legacy_names'; Name = 'legacy 2.x names'; Path = (Join-Path $PSScriptRoot 'runtime\test_legacy_names.py'); Blend = $null },
             @{ Key = 'wiggy_versions'; Name = 'wiggy 0.1 + 0.2.0'; Path = (Join-Path $PSScriptRoot 'runtime\test_wiggy_versions.py'); Blend = $null },
+            @{ Key = 'back_faces'; Name = 'back-face filter'; Path = (Join-Path $PSScriptRoot 'runtime\test_back_face_filter.py'); Blend = $null },
             @{ Key = 'legacy_attach'; Name = 'legacy clothing attach'; Path = (Join-Path $PSScriptRoot 'runtime\test_legacy_attach.py'); Blend = $Blend },
             @{ Key = 'cage_rebuild'; Name = 'cage rebuild clothing'; Path = (Join-Path $PSScriptRoot 'runtime\test_cage_rebuild_preserves_clothing.py'); Blend = $Blend }
         )) {

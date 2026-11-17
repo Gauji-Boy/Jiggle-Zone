@@ -62,6 +62,7 @@ The repeatable runtime checks live in `tests\runtime\`:
 | `test_cage_rebuild_preserves_clothing.py` | installed add-on + `poc_cage_xpbd_kasumi` | a garment's clothing Surface Deform survives cage generation and rebuild, cage discovery ignores bare clothing names |
 | `test_legacy_attach.py`           | installed add-on + `poc_cage_xpbd_kasumi` | re-attaching clothing leaves one bound Surface Deform, shape and deformation unchanged |
 | `test_wiggy_versions.py`          | source tree only         | `Wiggy 0.1` and `Wiggy 0.2.0` both work through presets, bake detection, cage lookup and the Socket_2 attribute path |
+| `test_back_face_filter.py`        | source tree only         | `Mark`/`Clear Back Faces` write an exact per-face mask through the real `Collider`, never touch the mesh, stay in front of `Collider`, read the live Edit Mode selection, and mute a stale mask in `depsgraph_update_pre` - before the evaluation that would use it - after any topology change including same-count swaps and corner changes, failing closed when the topology record is missing or the check cannot run, finding the filter by node group even after a rename, keeping the guard inactive in clean scenes, while surviving save, undo, sharing and linked data |
 
 `test_wiggy_versions.py` imports the add-on from source and registers it itself, so it runs headless
 with `--factory-startup` and needs no installed profile:

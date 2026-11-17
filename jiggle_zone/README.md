@@ -1,12 +1,13 @@
-# Jiggle Zone — 3.3.0
+# Jiggle Zone — 3.4.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 
 ## Requirements
 
 - Blender 5.2 LTS or Blender 5.3 Beta (or newer).
-- The bundled `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend` and `assets/JiggleV2.blend`
-  files must remain in the `assets/` directory next to `__init__.py`.
+- The bundled `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend`,
+  `assets/BackFaces.blend` and `assets/JiggleV2.blend` files must remain in the
+  `assets/` directory next to `__init__.py`.
 
 ## Install
 
@@ -41,6 +42,38 @@ What does not carry over:
 3. In the Jiggle Zone panel under **Create New Zone**, select the vertex group and pick an anatomical preset.
 4. Click **Add Jiggle Zone**.
 5. By default, **Cage XPBD** is generated to provide 5x-10x faster playback. You can toggle between Cage XPBD and Full-Mesh XPBD at any time.
+
+## Collider Back Faces (v3.4.0)
+
+Closed colliders can leak: a garment inside a closed mesh may be pushed out through the side
+facing away from the body. **Collider Back Faces** excludes the faces you choose without
+touching the mesh.
+
+1. Select the collider object, enter Edit Mode and select the faces to exclude.
+2. Open **Collider Back Faces** in the sidebar and click **Mark Back Faces**.
+
+- The filter is a `Back Faces` Geometry Nodes modifier placed directly before `Collider`. It
+  writes the solver's own exclusion attribute, so the mesh, its vertices, vertex groups and
+  the `Collider` modifier are never modified.
+- **Clear Back Faces** removes only that modifier. Undo/redo covers both operators.
+- The mask is stored per collider object and shared by every zone that uses it, so one
+  collider behaves the same in all zones.
+- Nothing runs automatically: marking is always an explicit action, and it invalidates the
+  bake of every zone that references the collider.
+- **Boundary colliders** (`Boundary` enabled) cannot be marked, because the boundary shell is
+  what keeps the solver's cage closed.
+- A mask addresses faces by index. The collider's topology is recorded exactly when you mark:
+  every corner index, every face's corner count, and the face/loop/vertex/edge counts. Any change
+  of face order or connectivity is therefore detected even when every count stays the same. The
+  check runs before the next evaluation, so the old mask can never exclude the wrong faces, and
+  the panel tells you to mark again. The mask is kept, so restoring the original topology
+  re-enables it. Re-marking always replaces the stale mask.
+- The filter fails closed: if the topology record is missing, was written by an older version, or
+  the check itself cannot run, the filter is disabled rather than applied to faces the record
+  cannot vouch for.
+- Marking reads the live Edit Mode selection from the BMesh, and the mask is written against the
+  mesh the modifier stack evaluates.
+- Marking is refused on linked or overridden objects; make the object local first.
 
 ## Simulation Caching & Baking (v3.0.0)
 
