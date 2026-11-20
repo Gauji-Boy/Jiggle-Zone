@@ -3,8 +3,8 @@
     blender -b --factory-startup --python-exit-code 1 \\
         --python tests/runtime/test_wiggy_versions.py
 
-3.1 bundles `Wiggy 0.2.0` and keeps `Wiggy 0.1` for projects that already embed it.
-Recognition used to be a hardcoded `name == "Wiggy 0.1"`, so the risk is not that the
+3.5 bundles `Wiggy 0.2.1` and keeps `Wiggy 0.2.0` and `Wiggy 0.1` for projects that
+already embed them. Recognition used to be a hardcoded `name == "Wiggy 0.1"`, so the risk is not that the
 predicate returns False — it is that a downstream path silently skips a 0.2 zone and
 reports "no solver". These checks therefore drive presets, bake detection, cage lookup
 and the Socket_2 attribute path for both versions, not just `is_wiggy_group`.
@@ -147,13 +147,16 @@ g.register()
 
 old_group = g.ensure_nodetree("Wiggy 0.1")
 new_group = g.ensure_nodetree("Wiggy 0.2.0")
+newest_group = g.ensure_nodetree(g.WIGGY_NEW_GROUP)
 
 # --- the allow-list itself -----------------------------------------------------------------
 section("recognition")
 check("0.1 is a supported group", g.is_wiggy_group(old_group), getattr(old_group, "name", None))
 check("0.2.0 is a supported group", g.is_wiggy_group(new_group), getattr(new_group, "name", None))
+check("0.2.1 is a supported group", g.is_wiggy_group(newest_group), getattr(newest_group, "name", None))
 check("None is not a supported group", not g.is_wiggy_group(None))
-for lookalike in ("Wiggy 0.2", "Wiggy 0.3.0", "Wiggy Something", "Wiggy 0.2.0 copy", "wiggy 0.2.0"):
+for lookalike in ("Wiggy 0.2", "Wiggy 0.3.0", "Wiggy Something", "Wiggy 0.2.0 copy", "wiggy 0.2.0",
+                  "Wiggy 0.2.1 copy", "wiggy 0.2.1"):
     group = bpy.data.node_groups.new(lookalike, "GeometryNodeTree")
     check(f"lookalike rejected: {lookalike!r}", not g.is_wiggy_group(group))
 
@@ -162,13 +165,17 @@ section("asset selection")
 check("0.2.0 resolves to its own file",
       g.ASSET_GROUP_FILES.get("Wiggy 0.2.0") == "Wiggy_0.2.0.blend",
       g.ASSET_GROUP_FILES.get("Wiggy 0.2.0"))
+check("0.2.1 resolves to its own file",
+      g.ASSET_GROUP_FILES.get(g.WIGGY_NEW_GROUP) == "Wiggy_0.2.1.blend",
+      g.ASSET_GROUP_FILES.get(g.WIGGY_NEW_GROUP))
 check("0.1 still resolves to its own file",
       g.ASSET_GROUP_FILES.get("Wiggy 0.1") == "Wiggy_0.1.blend",
       g.ASSET_GROUP_FILES.get("Wiggy 0.1"))
 check("an unrelated Wiggy-like group loads nothing",
       g.ensure_nodetree("Wiggy Something Else") is None)
-check("both groups coexist in one file",
-      {"Wiggy 0.1", "Wiggy 0.2.0"} <= {group.name for group in bpy.data.node_groups})
+check("all three groups coexist in one file",
+      {"Wiggy 0.1", "Wiggy 0.2.0", g.WIGGY_NEW_GROUP}
+      <= {group.name for group in bpy.data.node_groups})
 
 # --- modifier recognition on real modifiers -------------------------------------------------
 section("modifier recognition")
@@ -194,8 +201,8 @@ settings.new_zone_name = "Modern"
 result = bpy.ops.jiggle.add_zone()
 created = [m for m in fresh.modifiers if m.type == 'NODES']
 check("add_zone finished", result == {'FINISHED'}, result)
-check("new zone uses Wiggy 0.2.0",
-      created and created[-1].node_group and created[-1].node_group.name == "Wiggy 0.2.0",
+check("new zone uses Wiggy 0.2.1",
+      created and created[-1].node_group and created[-1].node_group.name == g.WIGGY_NEW_GROUP,
       [m.node_group.name if m.node_group else None for m in created])
 
 # --- preset application must be identical on both groups ------------------------------------
@@ -675,7 +682,7 @@ check("0.1 has no wave socket or fallback ID-property write",
 original_group_name = new_group.name
 new_group.name = "_Wiggy_0.2.0_wave_test_original"
 partial_group = new_group.copy()
-partial_group.name = g.WIGGY_NEW_GROUP
+partial_group.name = original_group_name
 missing_socket = next(
     item for item in partial_group.interface.items_tree
     if getattr(item, "identifier", None) == "Socket_143"

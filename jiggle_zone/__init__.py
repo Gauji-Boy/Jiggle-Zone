@@ -1,9 +1,9 @@
 bl_info = {
     "name": "Jiggle Zone",
     "author": "VOZHD1122 & RoboDrozd / Jiggle Zone",
-    "version": (3, 4, 0),
+    "version": (3, 5, 0),
     "blender": (5, 2, 0),
-    "location": "3D Viewport > Sidebar > Jiggle Zone",
+    "location": "3D Viewport > Sidebar > Jiggle",
     "description": "Interactive soft body jiggle physics and secondary motion based on XPBD and Simulation Zones",
     "warning": "",
     "doc_url": "https://github.com/Gauji-Boy/Jiggle-Zone",
@@ -2466,16 +2466,25 @@ PRESET_ENUM_ITEMS = get_preset_enum_items(None, None)
 
 # Bundled Wiggy solver node groups. An explicit allow-list, never a prefix match,
 # so an unrelated group named "Wiggy ..." is not mistaken for a supported solver.
-WIGGY_GROUPS = ("Wiggy 0.1", "Wiggy 0.2.0")
+WIGGY_GROUPS = ("Wiggy 0.1", "Wiggy 0.2.0", "Wiggy 0.2.1")
 
 # Node group the add-on creates for new zones. Existing modifiers keep whichever
 # group their project already embeds; nothing here rewrites them.
-WIGGY_NEW_GROUP = "Wiggy 0.2.0"
+WIGGY_NEW_GROUP = "Wiggy 0.2.1"
+
+# Groups that expose the 0.2.x interface (collider slots and return-wave controls).
+# Must include every released 0.2.x group so older zones keep their UI after the
+# default for *new* zones moves forward.
+WIGGY_020_PLUS_GROUPS = ("Wiggy 0.2.0", "Wiggy 0.2.1")
+
+# Groups that expose the validated ripple sockets. Ripple is opt-in and defaults off.
+WIGGY_RIPPLE_GROUPS = ("Wiggy 0.2.1",)
 
 # Bundled asset file that supplies each known node group.
 ASSET_GROUP_FILES = {
     "Wiggy 0.1": "Wiggy_0.1.blend",
     "Wiggy 0.2.0": "Wiggy_0.2.0.blend",
+    "Wiggy 0.2.1": "Wiggy_0.2.1.blend",
     "Collider": "Wiggy_0.2.0.blend",
     "Wiggy Wind": "Wiggy_0.2.0.blend",
     "Jiggle": "JiggleV2.blend",
@@ -2703,6 +2712,9 @@ def get_mod_socket_prop(mod, socket_id):
 
 
 WIGGY_WAVE_SOCKET_IDS = ("Socket_141", "Socket_142", "Socket_143")
+WIGGY_RIPPLE_SOCKET_IDS = ("Socket_145", "Socket_146", "Socket_147")
+WIGGY_SMOOTHING_SOCKET_ID = "Socket_98"
+WIGGY_SMOOTHING_AREA_SOCKET_ID = "Socket_99"
 
 
 WIGGY_COLLIDER_SOCKET_PAIRS = (
@@ -2812,7 +2824,7 @@ def _make_collider_mirror_update(slot_index, group_socket=False):
 def supports_wiggy_wave_settings(mod):
     return bool(
         mod
-        and getattr(getattr(mod, "node_group", None), "name", None) == WIGGY_NEW_GROUP
+        and getattr(getattr(mod, "node_group", None), "name", None) in WIGGY_020_PLUS_GROUPS
         and all(get_mod_socket_prop(mod, socket_id) is not None
                 for socket_id in WIGGY_WAVE_SOCKET_IDS)
     )
@@ -2821,10 +2833,28 @@ def supports_wiggy_wave_settings(mod):
 def supports_wiggy_collider_slots(mod):
     return bool(
         mod
-        and getattr(getattr(mod, "node_group", None), "name", None) == WIGGY_NEW_GROUP
+        and getattr(getattr(mod, "node_group", None), "name", None) in WIGGY_020_PLUS_GROUPS
         and all(get_mod_socket_prop(mod, socket_id) is not None
                 for pair in WIGGY_COLLIDER_SOCKET_PAIRS
                 for socket_id in pair)
+    )
+
+
+def supports_wiggy_ripple(mod):
+    """True only when the active solver actually exposes all three ripple sockets."""
+    return bool(
+        mod
+        and getattr(getattr(mod, "node_group", None), "name", None) in WIGGY_RIPPLE_GROUPS
+        and all(get_mod_socket_prop(mod, socket_id) is not None
+                for socket_id in WIGGY_RIPPLE_SOCKET_IDS)
+    )
+
+
+def supports_wiggy_smoothing(mod):
+    """Socket_98 also exists in 0.1, so gate on the socket, not on a version name."""
+    return bool(
+        is_wiggy_group(getattr(mod, "node_group", None) if mod else None)
+        and get_mod_socket_prop(mod, WIGGY_SMOOTHING_SOCKET_ID) is not None
     )
 
 
@@ -3158,6 +3188,31 @@ def make_socket_bool_set(socket_id):
         if mod:
             set_mod_socket(mod, socket_id, value=bool(value))
             mark_mod_customized(mod)
+    return setter
+
+
+def make_smoothing_set():
+    """Toggle solver smoothing and give it a non-zero Area mask.
+
+    Socket_98 is only the on/off switch. Socket_99 (Area) is a vertex-group mask
+    that defaults to 0.0 in the current Wiggy solver group, which means 'smooth nowhere', so the
+    checkbox alone would be a visible no-op. Mirror the zone's own weight group
+    into it. Groups without Socket_99 (older solvers, older Blender APIs) are
+    left alone; set_mod_socket() also forwards to an active cage by default.
+    """
+    def setter(self, value):
+        mod = _get_active_mod()
+        if not mod:
+            return
+        enabled = bool(value)
+        set_mod_socket(mod, WIGGY_SMOOTHING_SOCKET_ID, value=enabled)
+        if enabled and get_mod_socket_prop(mod, WIGGY_SMOOTHING_AREA_SOCKET_ID) is not None:
+            zone_attribute = get_mod_socket_attribute_name(mod, 'Socket_2')
+            if zone_attribute:
+                set_mod_socket(mod, WIGGY_SMOOTHING_AREA_SOCKET_ID, attribute=zone_attribute)
+            else:
+                set_mod_socket(mod, WIGGY_SMOOTHING_AREA_SOCKET_ID, value=1.0)
+        mark_mod_customized(mod)
     return setter
 
 
@@ -3584,6 +3639,29 @@ class JiggleSceneSettings(PropertyGroup):
         description="How much weaker the wave comes back each time: 0.5 is half as strong, 1 is no return at all",
         min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, step=1, precision=3,
         get=make_socket_get('Socket_143', 0.5), set=make_socket_set('Socket_143', 0.0, 1.0)
+    )
+    zone_ripple: FloatProperty(
+        name="Ripple",
+        description="Ripples that run out over the skin from where a collider hits it (a hand, a partner's hip, a slap, a knee) and die away. A surface detail on top of the jiggle: the simulation itself does not change. 0 is off",
+        min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, step=1, precision=3,
+        get=make_socket_get('Socket_145', 0.0), set=make_socket_set('Socket_145', 0.0, 1.0)
+    )
+    zone_ripple_speed: FloatProperty(
+        name="Ripple Speed",
+        description="How fast the ripples run over the skin, in m/s. Faster ones are also longer",
+        min=0.2, max=10.0, soft_min=0.2, soft_max=10.0, step=1, precision=2,
+        get=make_socket_get('Socket_146', 1.5), set=make_socket_set('Socket_146', 0.2, 10.0)
+    )
+    zone_ripple_fade: FloatProperty(
+        name="Ripple Fade",
+        description="Seconds in which the ripples get half as high",
+        min=0.01, max=1.0, soft_min=0.01, soft_max=1.0, step=1, precision=3,
+        get=make_socket_get('Socket_147', 0.08), set=make_socket_set('Socket_147', 0.01, 1.0)
+    )
+    zone_post_smoothing: BoolProperty(
+        name="Post-Simulation Smoothing",
+        description="Smooth the deformation after the simulation (solver Socket_98). Off by default; old projects keep their behaviour",
+        get=make_socket_bool_get('Socket_98', False), set=make_smoothing_set()
     )
     zone_max_distance: FloatProperty(
         name="Max Distance (Sag Limit)",
@@ -7545,6 +7623,14 @@ class VIEW3D_PT_jiggle_dynamics(VIEW3D_PT_jiggle_base, Panel):
                 col.prop(settings, "zone_return_wave", slider=True)
                 col.prop(settings, "zone_relax_time", slider=True)
                 col.prop(settings, "zone_decay", slider=True)
+            if supports_wiggy_ripple(mod):
+                ripple_box = col.box()
+                ripple_box.label(text="Ripple Dynamics")
+                ripple_box.prop(settings, "zone_ripple", slider=True)
+                ripple_details = ripple_box.column()
+                ripple_details.enabled = settings.zone_ripple > 0.0
+                ripple_details.prop(settings, "zone_ripple_speed", slider=True)
+                ripple_details.prop(settings, "zone_ripple_fade", slider=True)
             col.prop(settings, "zone_max_distance", text="Max Distance (Sag Limit)", slider=True)
             col.prop(settings, "zone_influence", text="Influence", slider=True)
         else:
@@ -7581,6 +7667,12 @@ class VIEW3D_PT_jiggle_shape(VIEW3D_PT_jiggle_base, Panel):
         col.prop(settings, "zone_stretching", text="Stretching", slider=True)
         col.prop(settings, "zone_bending", text="Bending", slider=True)
         col.prop(settings, "zone_edge_fade", text="Edge Fade (Rings)")
+        mods = get_jiggle_modifiers(context.active_object)
+        index = settings.active_zone_index
+        mod = mods[index] if 0 <= index < len(mods) else None
+        if supports_wiggy_smoothing(mod):
+            col.separator()
+            col.prop(settings, "zone_post_smoothing", text="Post-Simulation Smoothing")
 
 
 class VIEW3D_PT_jiggle_back_faces(VIEW3D_PT_jiggle_base, Panel):

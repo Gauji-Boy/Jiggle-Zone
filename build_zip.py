@@ -31,6 +31,7 @@ EXPECTED_ENTRIES = (
     "jiggle_zone/assets/JiggleV2.blend",
     "jiggle_zone/assets/Wiggy_0.1.blend",
     "jiggle_zone/assets/Wiggy_0.2.0.blend",
+    "jiggle_zone/assets/Wiggy_0.2.1.blend",
     "jiggle_zone/blender_manifest.toml",
 )
 
@@ -82,25 +83,32 @@ def verify(zip_path=ZIP_PATH, addon_dir=ADDON_DIR):
                 problems.append(f"unwanted entry {name}")
         if sorted(names) != sorted(EXPECTED_ENTRIES):
             problems.append(f"unexpected entry set {sorted(names)}")
-        packaged = archive.read(f"{ARCHIVE_ROOT}/__init__.py")
-    with open(os.path.join(addon_dir, "__init__.py"), "rb") as handle:
-        source = handle.read()
-    if hashlib.sha256(packaged).digest() != hashlib.sha256(source).digest():
-        problems.append("packaged __init__.py differs from the source tree")
+        for name in names:
+            if not name.startswith(f"{ARCHIVE_ROOT}/"):
+                continue
+            relative = name[len(ARCHIVE_ROOT) + 1:]
+            source_path = os.path.join(addon_dir, *relative.split("/"))
+            if not os.path.isfile(source_path):
+                problems.append(f"packaged {relative} has no source file")
+                continue
+            with open(source_path, "rb") as handle:
+                source = handle.read()
+            if hashlib.sha256(archive.read(name)).digest() != hashlib.sha256(source).digest():
+                problems.append(f"packaged {relative} differs from the source tree")
     return problems
 
 
-def check(addon_dir=ADDON_DIR):
-    """Build twice and confirm the bytes are identical. Returns the SHA-256."""
-    first, _ = build(ZIP_PATH, addon_dir)
+def check(addon_dir=ADDON_DIR, out_path=ZIP_PATH):
+    """Build twice into out_path and confirm the bytes are identical. Returns the SHA-256."""
+    first, _ = build(out_path, addon_dir)
     first_hash = sha256_file(first)
     with open(first, "rb") as handle:
         first_bytes = handle.read()
-    second, _ = build(ZIP_PATH, addon_dir)
-    second_bytes = open(second, "rb").read()
+    second, _ = build(out_path, addon_dir)
+    second_bytes = open(out_path, "rb").read()
     if first_bytes != second_bytes:
         raise SystemExit("FAIL rebuild is not byte-identical")
-    problems = verify(second, addon_dir)
+    problems = verify(out_path, addon_dir)
     if problems:
         for problem in problems:
             print("FAIL", problem)
@@ -108,15 +116,37 @@ def check(addon_dir=ADDON_DIR):
     return second_bytes, first_hash
 
 
+def output_path(argv):
+    """Optional --output PATH keeps the released jiggle-zone.zip untouched.
+
+    A malformed --output is a hard error: silently falling back to ZIP_PATH would
+    overwrite the released archive, which is exactly what this flag exists to avoid.
+    """
+    for index, arg in enumerate(argv):
+        if arg == "--output":
+            if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+                raise SystemExit("FAIL --output needs a path")
+            return argv[index + 1]
+        if arg.startswith("--output="):
+            value = arg.split("=", 1)[1]
+            if not value:
+                raise SystemExit("FAIL --output needs a path")
+            return value
+    return ZIP_PATH
+
+
 def main(argv):
+    out = output_path(argv)
     if "--check" in argv:
-        blob, digest = check()
+        blob, digest = check(out_path=out)
+        print("output:", out)
         print("entries:", len(EXPECTED_ENTRIES))
         print("zip bytes:", len(blob))
         print("zip sha256:", digest)
         print("PASS deterministic rebuild verified")
         return 0
-    path, entries = build()
+    path, entries = build(out_path=out)
+    print("output:", out)
     print("entries:", len(entries))
     for archive_name, _ in entries:
         print("  ", archive_name)

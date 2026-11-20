@@ -3,6 +3,8 @@
     blender -b --factory-startup --python-exit-code 1 --python tests/runtime/test_clean_install_zip.py
 
 Exits non-zero when the install fails or the installed entry does not match the source.
+
+Set JIGGLE_ZIP to test a candidate package without replacing the released jiggle-zone.zip.
 """
 
 import hashlib
@@ -13,7 +15,7 @@ import sys
 import bpy
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-ZIP = os.path.join(ROOT, "jiggle-zone.zip")
+ZIP = os.environ.get("JIGGLE_ZIP") or os.path.join(ROOT, "jiggle-zone.zip")
 SOURCE = os.path.join(ROOT, "jiggle_zone", "__init__.py")
 MANIFEST = os.path.join(ROOT, "jiggle_zone", "blender_manifest.toml")
 
@@ -49,6 +51,7 @@ def main():
     assert os.path.exists(ZIP), f"missing package: {ZIP}"
     expected = sha256(SOURCE)
     version = manifest_version()
+    print("ZIP", ZIP, sha256(ZIP))
     print("SOURCE", expected, "MANIFEST", version)
 
     result = bpy.ops.extensions.package_install_files(

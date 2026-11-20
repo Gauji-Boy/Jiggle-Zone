@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.0 — Wiggy 0.2.1 and Ripple Dynamics
+
+- New zones use bundled Wiggy 0.2.1; 0.1 and 0.2.0 zones keep their node groups.
+- Ripple Dynamics (three per-zone controls, off by default) and optional Post-Simulation Smoothing are exposed in the sidebar.
+- Headless Ripple measurements show ~39–55% extra frame time; interactive viewport profiling is not claimed. See `jiggle_zone/CHANGELOG.md` for the full notes.
+
 ## 3.4.0 - Collider back-face filter
 
 ### Added

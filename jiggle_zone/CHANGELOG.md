@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.5.0 — Wiggy 0.2.1 and Ripple Dynamics
+
+### Added
+- Bundled `Wiggy_0.2.1.blend` (1,519,926 bytes, SHA-256
+  `4328183f843cd961fca0f836ac84cadb0e62dae285f97410877c07bcd82b8625`). New zones use
+  `Wiggy 0.2.1`; `Wiggy 0.1`, `Wiggy 0.2.0`, the Collider and Wiggy Wind asset mappings,
+  and the Back Faces implementation are unchanged.
+- Three per-zone Ripple controls, off by default, mapped to the validated sockets
+  `Socket_145` (Ripple 0–1, default 0), `Socket_146` (Ripple Speed 0.2–10, default 1.5) and
+  `Socket_147` (Ripple Fade 0.01–1, default 0.08). A compact **Ripple Dynamics** section
+  in Dynamics & Inertia shows Ripple first and disables Speed/Fade while Ripple is zero.
+- Optional **Post-Simulation Smoothing** toggle mapped to the existing `Socket_98`,
+  default off. It uses the solver's own smoothing and adds no extra modifier.
+
+### Changed
+- Wave and per-slot collider controls now recognise every released 0.2.x group, so
+  opening a 0.2.0 project after upgrading does not hide its controls.
+- Manifest and `bl_info` report 3.5.0.
+
+### Performance and documentation notes
+- Headless Ripple measurements: +6.29 ms (+39.2%) mean frame time with a 256-face collider
+  and +8.51 ms (+55.1%) with an ~84k-face collider. Pre-contact Ripple-on frames cost
+  about 5.81 ms / 7.95 ms more than Ripple-off, so the validator's "zero inactive overhead"
+  headline is not accurate. Interactive viewport profiling has not been performed.
+- The upstream Markdown validation report quotes 1,514,646 bytes for the 0.2.0 asset;
+  the results JSON and the shipped file are 1,464,782 bytes with the same SHA-256.
+  Geometry Nodes simulation-zone caching is confirmed; standard point caching is not.
+
 ## 3.4.0 - Collider back-face filter
 
 ### Added

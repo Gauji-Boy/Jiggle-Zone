@@ -1,13 +1,28 @@
-# Jiggle Zone — 3.4.0
+# Jiggle Zone — 3.5.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 
 ## Requirements
 
 - Blender 5.2 LTS or Blender 5.3 Beta (or newer).
-- The bundled `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend`,
+- The bundled `assets/Wiggy_0.2.1.blend`, `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend`,
   `assets/BackFaces.blend` and `assets/JiggleV2.blend` files must remain in the
   `assets/` directory next to `__init__.py`.
+
+## What's new in 3.5.0
+
+- New zones use the bundled **Wiggy 0.2.1** solver. Existing `Wiggy 0.1` and `Wiggy 0.2.0`
+  zones keep their own node groups; all three versions can coexist in one scene. Old
+  projects are never silently upgraded.
+- **Ripple Dynamics** adds three per-zone controls, off by default: `Ripple`, `Ripple Speed`
+  and `Ripple Fade` (solver sockets `Socket_145`, `Socket_146`, `Socket_147`). Speed and fade
+  are disabled while Ripple is zero.
+- **Post-Simulation Smoothing** exposes the solver's existing `Socket_98` as an optional
+  toggle, default off. It does not add another modifier to the stack.
+- Performance qualification: headless measurements put Ripple ON at about **+6.29 ms
+  (+39.2%)** with a light collider and **+8.51 ms (+55.1%)** with a dense one. Pre-contact
+  frames with Ripple enabled also cost about 5.81 ms / 7.95 ms more than Ripple OFF. No
+  full interactive viewport profiling has been done; treat these as headless figures.
 
 ## Install
 
@@ -15,7 +30,7 @@ A high-performance Blender character secondary motion and XPBD soft-body simulat
 2. Click the dropdown arrow in the top right and select **Install from Disk...**
 3. Select `jiggle-zone.zip`.
 4. Enable **Jiggle Zone**.
-5. In the 3D Viewport, open the **N-panel -> Jiggle Zone** tab.
+5. In the 3D Viewport, open the **N-panel -> Jiggle** tab.
 
 ## Upgrading from Giggle 2.x
 
@@ -90,9 +105,10 @@ touching the mesh.
 ## Compatibility Notes
 
 - **Wiggy XPBD** is the default high-performance engine for creating new zones, and new zones use
-  the bundled **Wiggy 0.2.0** solver group.
+  the bundled **Wiggy 0.2.1** solver group.
 - Zones from earlier projects keep the solver group their file already contains: opening a 3.0.0
-  project does not inject or replace its `Wiggy 0.1` groups, and zones added afterwards use 0.2.0
-  alongside them.
+  project does not inject or replace its `Wiggy 0.1` groups, and opening a 3.4.0 project keeps its
+  `Wiggy 0.2.0` groups. Zones added afterwards use 0.2.1 alongside them, and all three versions can
+  coexist in one scene.
 - **Full-Mesh XPBD** remains fully supported as a hero-shot toggle.
 - Existing **Jiggle V2** modifiers from v1.2.1 projects remain functional and retain their legacy dynamics controls.

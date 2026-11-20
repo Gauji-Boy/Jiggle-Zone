@@ -15,8 +15,15 @@ param(
     [string[]]$Blender = @(
         'D:\Blender 5.3\blender.exe'
     ),
-    [string]$Artifacts = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts')
+    [string]$Artifacts = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts'),
+    # Candidate package for the clean-install suite. Empty means the released jiggle-zone.zip.
+    [string]$Zip = $env:JIGGLE_ZIP
 )
+
+if ($Zip) {
+    if (-not (Test-Path -LiteralPath $Zip)) { throw "Zip not found: $Zip" }
+    $env:JIGGLE_ZIP = (Resolve-Path -LiteralPath $Zip).Path
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $Artifacts (Get-Date -Format 'yyyyMMdd_HHmmss')
@@ -28,6 +35,10 @@ $summary = New-Object System.Collections.Generic.List[string]
 $summary.Add("Jiggle test run $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $summary.Add("blend      : $Blend")
 $summary.Add("source sha : $sourceHash")
+if ($env:JIGGLE_ZIP) {
+    $zipHash = (Get-FileHash -LiteralPath $env:JIGGLE_ZIP).Hash
+    $summary.Add("zip        : $env:JIGGLE_ZIP ($zipHash)")
+}
 if (Test-Path (Join-Path $root '.git')) {
     $rev = (git -C $root rev-parse --short HEAD) 2>$null
     $branch = (git -C $root rev-parse --abbrev-ref HEAD) 2>$null
@@ -80,7 +91,8 @@ foreach ($exe in $Blender) {
             @{ Key = 'secondary'; Name = 'secondary scene smoke'; Path = (Join-Path $PSScriptRoot 'runtime\test_secondary_scene.py'); Blend = $SecondaryBlend },
             @{ Key = 'install'; Name = 'clean install from zip'; Path = (Join-Path $PSScriptRoot 'runtime\test_clean_install_zip.py'); Blend = $null },
             @{ Key = 'legacy_names'; Name = 'legacy 2.x names'; Path = (Join-Path $PSScriptRoot 'runtime\test_legacy_names.py'); Blend = $null },
-            @{ Key = 'wiggy_versions'; Name = 'wiggy 0.1 + 0.2.0'; Path = (Join-Path $PSScriptRoot 'runtime\test_wiggy_versions.py'); Blend = $null },
+            @{ Key = 'wiggy_versions'; Name = 'wiggy 0.1 + 0.2.x'; Path = (Join-Path $PSScriptRoot 'runtime\test_wiggy_versions.py'); Blend = $null },
+            @{ Key = 'wiggy_021'; Name = 'wiggy 0.2.1 ripple + smoothing'; Path = (Join-Path $PSScriptRoot 'runtime\test_wiggy_021_ripple.py'); Blend = $null },
             @{ Key = 'back_faces'; Name = 'back-face filter'; Path = (Join-Path $PSScriptRoot 'runtime\test_back_face_filter.py'); Blend = $null },
             @{ Key = 'legacy_attach'; Name = 'legacy clothing attach'; Path = (Join-Path $PSScriptRoot 'runtime\test_legacy_attach.py'); Blend = $Blend },
             @{ Key = 'cage_rebuild'; Name = 'cage rebuild clothing'; Path = (Join-Path $PSScriptRoot 'runtime\test_cage_rebuild_preserves_clothing.py'); Blend = $Blend }
@@ -98,7 +110,7 @@ foreach ($exe in $Blender) {
         Write-Host "=== Blender $label : $($suite.Name) ==="
         # The Wiggy cage-generation fixture can crash Embree 4 on this Windows Blender build
         # when many worker threads are enabled; a single worker keeps this regression run stable.
-        $threadArgs = if ($suite.Key -eq 'wiggy_versions') { @('-t', '1') } else { @() }
+        $threadArgs = if ($suite.Key -in @('wiggy_versions', 'wiggy_021')) { @('-t', '1') } else { @() }
         if ($suite.Blend) {
             & $exe -b @threadArgs $suite.Blend --python-exit-code 1 --python $suite.Path *> $log
         } else {

@@ -1,11 +1,15 @@
-# Jiggle Zone — 3.4.0
+# Jiggle Zone — 3.5.0
 
 A high-performance Blender character secondary motion and XPBD soft-body simulation add-on.
 
 ## Requirements
 
 - Blender 5.2 LTS or Blender 5.3 Beta (or newer).
-- The bundled `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend`, `assets/BackFaces.blend` and `assets/JiggleV2.blend` files must remain in the `assets/` directory next to `__init__.py`.
+- The bundled `assets/Wiggy_0.2.1.blend`, `assets/Wiggy_0.2.0.blend`, `assets/Wiggy_0.1.blend`, `assets/BackFaces.blend` and `assets/JiggleV2.blend` files must remain in the `assets/` directory next to `__init__.py`.
+
+## What's new in 3.5.0
+
+New zones use **Wiggy 0.2.1**; existing 0.1 and 0.2.0 zones keep their solver groups. Ripple Dynamics (Ripple / Ripple Speed / Ripple Fade, off by default) and the optional Post-Simulation Smoothing toggle are exposed per zone. Headless measurements show Ripple adding roughly 39–55% frame time; interactive viewport profiling has **not** been performed. See `jiggle_zone/README.md` for details.
 
 ## Install
 
@@ -13,7 +17,7 @@ A high-performance Blender character secondary motion and XPBD soft-body simulat
 2. Click the dropdown arrow in the top right and select **Install from Disk...**
 3. Select `jiggle-zone.zip`.
 4. Enable **Jiggle Zone**.
-5. In the 3D Viewport, open the **N-panel -> Jiggle Zone** tab.
+5. In the 3D Viewport, open the **N-panel -> Jiggle** tab.
 
 ## Upgrading from Giggle 2.x
 

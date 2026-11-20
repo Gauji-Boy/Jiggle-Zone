@@ -17,10 +17,17 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGE = os.path.join(ROOT, "jiggle_zone")
 
-LITERALS = ("Wiggy 0.1", "Wiggy_0.1", "Wiggy 0.2.0", "Wiggy_0.2.0")
+LITERALS = (
+    "Wiggy 0.1", "Wiggy_0.1",
+    "Wiggy 0.2.0", "Wiggy_0.2.0",
+    "Wiggy 0.2.1", "Wiggy_0.2.1",
+)
 
 # The only assignments permitted to name a group.
-ALLOWED_NAMES = ("WIGGY_GROUPS", "WIGGY_NEW_GROUP", "ASSET_GROUP_FILES")
+ALLOWED_NAMES = (
+    "WIGGY_GROUPS", "WIGGY_NEW_GROUP", "WIGGY_020_PLUS_GROUPS",
+    "WIGGY_RIPPLE_GROUPS", "ASSET_GROUP_FILES",
+)
 
 COMPARISON_OPERATORS = (ast.Eq, ast.NotEq, ast.In, ast.NotIn)
 
@@ -82,8 +89,10 @@ def audit(text, filename="<memory>"):
 def selftest():
     """Prove the audit fires on a regression, and stays quiet on the real source."""
     injected = (
-        'WIGGY_GROUPS = ("Wiggy 0.1", "Wiggy 0.2.0")\n'
-        'WIGGY_NEW_GROUP = "Wiggy 0.2.0"\n'
+        'WIGGY_GROUPS = ("Wiggy 0.1", "Wiggy 0.2.0", "Wiggy 0.2.1")\n'
+        'WIGGY_NEW_GROUP = "Wiggy 0.2.1"\n'
+        'WIGGY_020_PLUS_GROUPS = ("Wiggy 0.2.0", "Wiggy 0.2.1")\n'
+        'WIGGY_RIPPLE_GROUPS = ("Wiggy 0.2.1",)\n'
         'ASSET_GROUP_FILES = {"Wiggy 0.1": "Wiggy_0.1.blend"}\n'
         "def f(mod):\n"
         '    return mod.node_group.name == "Wiggy 0.1"\n'
